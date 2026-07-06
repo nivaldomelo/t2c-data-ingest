@@ -7,6 +7,8 @@ export default function LoginPage() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [showMfa, setShowMfa] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -15,9 +17,12 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await login(email, password);
+      await login(email, password, mfaCode || undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha no login");
+      const message = err instanceof Error ? err.message : "Falha no login";
+      // t2c_data signals a required/invalid MFA code — reveal the field so the user can retry.
+      if (/mfa|c[oó]digo|2fa|autentica/i.test(message)) setShowMfa(true);
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -52,6 +57,21 @@ export default function LoginPage() {
           required
           className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
         />
+        {showMfa && (
+          <>
+            <label className="mt-4 block text-sm font-medium text-slate-700">
+              Código MFA
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tracking-widest focus:border-brand-500 focus:outline-none"
+            />
+          </>
+        )}
         <button
           type="submit"
           disabled={busy}

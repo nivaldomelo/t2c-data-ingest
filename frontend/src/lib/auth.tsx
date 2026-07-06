@@ -14,7 +14,7 @@ export interface Me {
 interface AuthContextValue {
   me: Me | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, mfaCode?: string) => Promise<void>;
   logout: () => void;
   can: (permission: string) => boolean;
 }
@@ -46,8 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadMe]);
 
   const login = useCallback(
-    async (email: string, password: string) => {
-      const token = await api.login(email, password);
+    async (email: string, password: string, mfaCode?: string) => {
+      const token = await api.login(email, password, mfaCode);
       setToken(token);
       setLoading(true);
       await loadMe();

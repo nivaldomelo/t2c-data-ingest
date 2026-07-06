@@ -67,17 +67,28 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
 
-  // Login uses form-encoding (OAuth2 password flow), like t2c_data.
-  async login(email: string, password: string): Promise<string> {
-    const form = new URLSearchParams();
-    form.set("username", email);
-    form.set("password", password);
+  // Login forwards {email, password, mfa_code?} as JSON to the ingest proxy, which relays
+  // to t2c_data. Surfaces the real upstream error (invalid credentials, MFA required, ...).
+  async login(email: string, password: string, mfaCode?: string): Promise<string> {
     const resp = await fetch(`${BASE}/api/v1/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        ...(mfaCode ? { mfa_code: mfaCode } : {}),
+      }),
     });
-    if (!resp.ok) throw new ApiError(resp.status, "Credenciais inválidas");
+    if (!resp.ok) {
+      let detail = "Credenciais inválidas";
+      try {
+        const data = await resp.json();
+        if (data?.detail) detail = typeof data.detail === "string" ? data.detail : detail;
+      } catch {
+        /* ignore */
+      }
+      throw new ApiError(resp.status, detail);
+    }
     const data = (await resp.json()) as { access_token: string };
     return data.access_token;
   },
