@@ -1,6 +1,7 @@
 # Environment / secrets
 .env
 .env.*
+!.env.example
 *.local
 
 # Python
@@ -21,9 +22,9 @@ node_modules/
 npm-debug.log*
 yarn-error.log*
 
-# Data / artifacts
-data/
-*.csv
+# Spark scratch / data outputs (keep the folder, ignore contents)
+spark/data/*
+!spark/data/.gitkeep
 *.parquet
 *.log
 

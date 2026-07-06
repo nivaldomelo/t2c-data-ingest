@@ -1,0 +1,2 @@
+# Extra local JARs (JDBC drivers) mounted into the backend/worker at /app/jars and passed to
+# spark-submit via --jars. The cluster image already bakes the standard drivers.

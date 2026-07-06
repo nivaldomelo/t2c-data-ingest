@@ -1,0 +1,2 @@
+# Shared scratch/output volume mounted at /data in the Spark cluster, API and worker.
+# SPARK results and bronze/silver/gold parquet land here in local dev.

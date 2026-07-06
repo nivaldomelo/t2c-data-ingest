@@ -1,0 +1,115 @@
+# T2C Data Ingest — local development stack.
+#
+# Reuses the EXISTING Postgres from t2c_data (the ingest product only adds the
+# t2c_data_ingest schema; it never duplicates users/roles). By default the backend/worker
+# connect to a Postgres running on the host via host.docker.internal. If you don't have one,
+# start the bundled Postgres with:  docker compose --profile with-db up
+#
+# Ports are offset from t2c_data's defaults so both stacks can run side by side:
+#   API 8010 · Frontend 3001 · Spark master 7078/8090 · Spark worker 8091
+#
+# Prereq: create backend/.env from backend/.env.example (JWT_SECRET_KEY must match t2c_data).
+#
+# Usage:  docker compose up --build
+
+services:
+  spark-master:
+    build: ./spark
+    hostname: spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    ports:
+      - "7078:7077"
+      - "8090:8080"
+    volumes:
+      - ./spark/data:/data
+    networks: [t2c]
+
+  spark-worker:
+    build: ./spark
+    hostname: spark-worker-1
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--cores", "2", "--memory", "2G", "--webui-port", "8081"]
+    ports:
+      - "8091:8081"
+    volumes:
+      - ./spark/data:/data
+    depends_on: [spark-master]
+    networks: [t2c]
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    hostname: api
+    # Dev convenience: apply migrations, seed the local cluster, then serve.
+    command: >
+      sh -c "alembic upgrade head &&
+             python scripts/seed_local_cluster.py &&
+             uvicorn t2c_ingest.main:app --host 0.0.0.0 --port 8000"
+    env_file: [./backend/.env]
+    environment:
+      ENV: dev
+      SPARK_MASTER_URL: spark://spark-master:7077
+      CORS_ALLOW_ORIGINS: http://localhost:3001,http://localhost:5173
+    ports:
+      - "8010:8000"
+    volumes:
+      - ./spark/data:/data
+      - ./spark/jobs:/opt/spark/jobs
+      - ./spark/jars:/app/jars
+      - ./python_jobs:/opt/t2c/python_jobs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: [spark-master]
+    networks: [t2c]
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    hostname: t2c_data_ingest_worker
+    command: ["python", "scripts/run_worker.py"]
+    env_file: [./backend/.env]
+    environment:
+      ENV: dev
+      SPARK_MASTER_URL: spark://spark-master:7077
+    volumes:
+      - ./spark/data:/data
+      - ./spark/jobs:/opt/spark/jobs
+      - ./spark/jars:/app/jars
+      - ./python_jobs:/opt/t2c/python_jobs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: [api, spark-master]
+    networks: [t2c]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    hostname: frontend
+    ports:
+      - "3001:80"
+    depends_on: [api]
+    networks: [t2c]
+
+  # Optional: only starts with `--profile with-db`. Use it if you don't already have the
+  # t2c_data Postgres running. Point backend/.env DATABASE_URL at this service (host "postgres").
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["with-db"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: t2c_data
+    ports:
+      - "5433:5432"
+    volumes:
+      - ingest_pgdata:/var/lib/postgresql/data
+    networks: [t2c]
+
+networks:
+  t2c:
+    driver: bridge
+
+volumes:
+  ingest_pgdata:
