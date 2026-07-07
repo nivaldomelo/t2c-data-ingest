@@ -1,17 +1,29 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from t2c_ingest.core.db import get_db
 from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
 from t2c_ingest.features.auth_bridge import permissions as perms
+from t2c_ingest.features.connections.repository import get_connection_by_ref
+from t2c_ingest.features.jobs.code_service import CodeError, detect_language, read_job_code
+from t2c_ingest.models.connection import Connection
 from t2c_ingest.models.execution import Execution
 from t2c_ingest.models.job import JobDefinition
 from t2c_ingest.schemas.execution import ExecutionOut
-from t2c_ingest.schemas.job import JobCreate, JobOut, JobRunRequest, JobUpdate
+from t2c_ingest.schemas.job import (
+    JobCodeOut,
+    JobCreate,
+    JobDetailOut,
+    JobOut,
+    JobRunRequest,
+    JobUpdate,
+)
 from t2c_ingest.services.audit import record_audit
 from t2c_ingest.services.execution_service import enqueue_job_execution
 
@@ -58,16 +70,59 @@ def create_job(
     return JobOut.model_validate(job)
 
 
-@router.get("/{job_id}", response_model=JobOut)
+def _connection_name(db: Session, connection_id: int | None) -> str | None:
+    if not connection_id:
+        return None
+    conn = db.get(Connection, connection_id)
+    return conn.name if conn else None
+
+
+def _arg_connection_name(job: JobDefinition, flag: str) -> str | None:
+    """Fallback: read a connection name from the job arguments (--source-connection etc.)."""
+    args = [str(a) for a in (job.arguments or [])]
+    for i, a in enumerate(args):
+        if a == flag and i + 1 < len(args):
+            return args[i + 1]
+        if a.startswith(flag + "="):
+            return a.split("=", 1)[1]
+    return None
+
+
+@router.get("/{job_id}", response_model=JobDetailOut)
 def get_job(
     job_id: int,
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
-) -> JobOut:
+) -> JobDetailOut:
     job = db.get(JobDefinition, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    return JobOut.model_validate(job)
+
+    detail = JobDetailOut.model_validate(job)
+    detail.source_connection_name = _connection_name(db, job.source_connection_id) or _arg_connection_name(
+        job, "--source-connection"
+    )
+    detail.target_connection_name = _connection_name(db, job.target_connection_id) or _arg_connection_name(
+        job, "--target-connection"
+    )
+
+    detail.executions_total = (
+        db.scalar(select(func.count(Execution.id)).where(Execution.job_id == job_id)) or 0
+    )
+    last = db.scalar(
+        select(Execution).where(Execution.job_id == job_id).order_by(Execution.id.desc()).limit(1)
+    )
+    if last:
+        detail.last_execution_id = last.id
+        detail.last_status = last.status
+        detail.last_finished_at = last.finished_at
+    avg = db.scalar(
+        select(func.avg(Execution.duration_seconds)).where(
+            Execution.job_id == job_id, Execution.status == "success"
+        )
+    )
+    detail.avg_duration_seconds = float(avg) if avg is not None else None
+    return detail
 
 
 @router.patch("/{job_id}", response_model=JobOut)
@@ -111,15 +166,59 @@ def run_job(
 def job_executions(
     job_id: int,
     params: PageParams = Depends(),
+    status_filter: str | None = Query(None, alias="status"),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    user_id: str | None = Query(None, description="Filtra por quem disparou (e-mail)"),
+    search: str | None = Query(None, description="Busca na mensagem final / alvo"),
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
 ) -> PageOut[ExecutionOut]:
-    total = db.scalar(select(func.count(Execution.id)).where(Execution.job_id == job_id)) or 0
+    if not db.get(JobDefinition, job_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    filters = [Execution.job_id == job_id]
+    if status_filter:
+        filters.append(Execution.status == status_filter)
+    if date_from:
+        filters.append(Execution.created_at >= date_from)
+    if date_to:
+        filters.append(Execution.created_at <= date_to)
+    if user_id:
+        filters.append(Execution.triggered_by == user_id)
+    if search:
+        like = f"%{search.strip()}%"
+        filters.append(or_(Execution.final_message.ilike(like), Execution.target_name.ilike(like)))
+
+    count_stmt = select(func.count(Execution.id))
+    stmt = select(Execution)
+    for f in filters:
+        count_stmt = count_stmt.where(f)
+        stmt = stmt.where(f)
+    total = db.scalar(count_stmt) or 0
     rows = db.scalars(
-        select(Execution)
-        .where(Execution.job_id == job_id)
-        .order_by(Execution.id.desc())
-        .offset(params.offset)
-        .limit(params.limit)
+        stmt.order_by(Execution.id.desc()).offset(params.offset).limit(params.limit)
     ).all()
     return PageOut.build([ExecutionOut.model_validate(r) for r in rows], total, params)
+
+
+@router.get("/{job_id}/code", response_model=JobCodeOut)
+def job_code(
+    job_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_JOBS_CODE_READ)),
+) -> JobCodeOut:
+    job = db.get(JobDefinition, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    try:
+        content = read_job_code(job.script_path or "")
+    except CodeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    return JobCodeOut(
+        job_id=job.id,
+        job_name=job.name,
+        script_path=job.script_path,
+        language=detect_language(job.script_path or "", job.type),
+        content=content,
+        read_only=True,
+    )

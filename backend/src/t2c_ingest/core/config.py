@@ -75,6 +75,16 @@ class Settings(BaseSettings):
         default="org.postgresql:postgresql:42.7.10,com.mysql:mysql-connector-j:9.1.0",
         validation_alias="SPARK_JDBC_PACKAGES",
     )
+    # Directories the job code viewer is allowed to read from (comma-separated). Any script
+    # outside these (or path traversal) is rejected.
+    allowed_script_dirs: str = Field(
+        default="/opt/t2c/spark/jobs,/opt/t2c/python_jobs,/opt/spark/jobs,/app/jobs",
+        validation_alias="ALLOWED_SCRIPT_DIRS",
+    )
+
+    @property
+    def allowed_script_dirs_list(self) -> list[str]:
+        return [d.strip() for d in self.allowed_script_dirs.split(",") if d.strip()]
 
     # Worker queue polling (the API only enqueues; heavy work runs in the worker/cluster).
     worker_poll_interval_seconds: int = 2

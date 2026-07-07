@@ -34,6 +34,15 @@ class JobDefinition(TimestampMixin, Base):
     connection_id: Mapped[int | None] = mapped_column(
         ForeignKey("connections.id", ondelete="SET NULL"), index=True
     )
+    # Optional source/target connections (e.g. MySQL -> PostgreSQL jobs).
+    source_connection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("connections.id", ondelete="SET NULL"), index=True
+    )
+    target_connection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("connections.id", ondelete="SET NULL"), index=True
+    )
+    default_parameters: Mapped[dict | None] = mapped_column(JSONB)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     # python_worker | spark_cluster (defaults derived from type when null)
     engine: Mapped[str | None] = mapped_column(String(20))
     timeout_seconds: Mapped[int | None] = mapped_column(Integer)

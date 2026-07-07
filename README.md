@@ -126,6 +126,29 @@ login no t2c_data e reutilize o token.
 3. O **worker** captura a execução, roda (`python` ou `spark-submit`), grava logs e status.
 4. Acompanhe em **Execuções** e veja os logs no detalhe.
 
+### Detalhe do job (abas)
+
+Clique no nome de um job (ou em **Ver detalhes**) para abrir `/jobs/{id}`, com abas:
+
+- **Visão geral** — tipo, engine, script, conexões origem/destino, parâmetros padrão,
+  timeout, retry, criador, última execução, último status e tempo médio.
+- **Execuções** — apenas as execuções daquele job, com filtros (status, data inicial/final,
+  usuário, busca na mensagem) e paginação de 25. Clique numa execução para abrir o detalhe.
+- **Código** — visualizador somente leitura do script (fonte monoespaçada, numeração de
+  linhas, badge de linguagem, botão **Copiar código**).
+- **Configurações** — argumentos e chaves de variáveis de ambiente (valores ocultados).
+
+Endpoints: `GET /api/v1/jobs/{id}`, `GET /api/v1/jobs/{id}/executions`
+(`page,page_size,status,date_from,date_to,user_id,search`), `GET /api/v1/jobs/{id}/code`.
+
+**Leitura de código — segurança.** O backend só serve arquivos **dentro dos diretórios
+permitidos** (`ALLOWED_SCRIPT_DIRS`, padrão `/opt/t2c/spark/jobs`, `/opt/t2c/python_jobs`,
+`/opt/spark/jobs`, `/app/jobs`). O caminho é resolvido com `realpath` e validado — path
+traversal (`../`), caminhos absolutos fora da allowlist (`/etc/passwd`) e arquivos inexistentes
+retornam erro tratado e amigável. O acesso ao código exige a permissão
+**`ingest:jobs:code:read`** (admin e editor); viewer/stewardship/data_owner veem detalhe e
+execuções, mas não o código.
+
 ## Conexões (bancos de dados)
 
 O item de menu **Conexões** gerencia conexões PostgreSQL/MySQL reutilizáveis por jobs e

@@ -15,6 +15,8 @@ INGEST_CONNECTIONS_READ = "ingest:connections:read"
 INGEST_CONNECTIONS_WRITE = "ingest:connections:write"
 INGEST_CONNECTIONS_TEST = "ingest:connections:test"
 INGEST_CONNECTIONS_DELETE = "ingest:connections:delete"
+# Reading a job's source code (potentially sensitive). Admin/editor only by default.
+INGEST_JOBS_CODE_READ = "ingest:jobs:code:read"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -30,6 +32,7 @@ ALL_PERMISSIONS = {
     INGEST_CONNECTIONS_WRITE,
     INGEST_CONNECTIONS_TEST,
     INGEST_CONNECTIONS_DELETE,
+    INGEST_JOBS_CODE_READ,
 }
 
 # Mapping from t2c_data role -> ingest permissions.
@@ -50,6 +53,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONNECTIONS_WRITE,
         INGEST_CONNECTIONS_TEST,
         INGEST_CONNECTIONS_DELETE,
+        INGEST_JOBS_CODE_READ,
     },
     "editor": {
         INGEST_READ,
@@ -61,6 +65,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONNECTIONS_READ,
         INGEST_CONNECTIONS_WRITE,
         INGEST_CONNECTIONS_TEST,
+        INGEST_JOBS_CODE_READ,
     },
     "viewer": {
         INGEST_READ,

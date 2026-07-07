@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, Play } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Boxes, Eye, Play } from "lucide-react";
 
 import { api } from "@/lib/api";
 import type { Page } from "@/lib/api";
 import { DataTable, EmptyState, PageHeader, PrimaryButton, StatusBadge } from "@/components/ui";
 import type { Column } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
 
 interface Job {
@@ -25,6 +27,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default function JobsPage() {
   const { can } = useAuth();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["jobs"],
@@ -42,7 +45,15 @@ export default function JobsPage() {
       header: "Job",
       render: (j) => (
         <div>
-          <div className="font-medium text-gray-900">{j.name}</div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/jobs/${j.id}`);
+            }}
+            className="font-medium text-gray-900 hover:text-brand-600 hover:underline"
+          >
+            {j.name}
+          </button>
           <div className="font-mono text-xs text-gray-400">{j.script_path ?? "—"}</div>
         </div>
       ),
@@ -61,18 +72,31 @@ export default function JobsPage() {
       key: "actions",
       header: "",
       align: "right",
-      render: (j) =>
-        can("ingest:run") ? (
-          <PrimaryButton
-            size="sm"
-            icon={<Play size={14} />}
-            loading={run.isPending && run.variables === j.id}
-            disabled={!j.is_active}
-            onClick={() => run.mutate(j.id)}
+      render: (j) => (
+        <div className="flex items-center justify-end gap-1">
+          <button
+            title="Ver detalhes"
+            onClick={(e) => { e.stopPropagation(); navigate(`/jobs/${j.id}`); }}
+            className={cn(
+              "inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400",
+              "transition-colors hover:bg-gray-100 hover:text-gray-700"
+            )}
           >
-            Executar
-          </PrimaryButton>
-        ) : null,
+            <Eye size={16} />
+          </button>
+          {can("ingest:run") && (
+            <PrimaryButton
+              size="sm"
+              icon={<Play size={14} />}
+              loading={run.isPending && run.variables === j.id}
+              disabled={!j.is_active}
+              onClick={(e) => { e.stopPropagation(); run.mutate(j.id); }}
+            >
+              Executar
+            </PrimaryButton>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -88,6 +112,7 @@ export default function JobsPage() {
         rows={data?.items ?? []}
         rowKey={(j) => j.id}
         loading={isLoading}
+        onRowClick={(j) => navigate(`/jobs/${j.id}`)}
         empty={
           <EmptyState
             icon={<Boxes size={24} />}
