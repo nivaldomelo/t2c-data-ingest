@@ -29,6 +29,11 @@ interface Detail {
   final_message: string | null;
   error_trace: string | null;
   parameters: Record<string, unknown> | null;
+  trigger_type: string;
+  schedule_id: number | null;
+  schedule_name: string | null;
+  scheduled_for: string | null;
+  triggered_at: string | null;
   logs: LogLine[];
   runtime_parameters: { id: number; key: string; value: string | null }[];
 }
@@ -152,6 +157,16 @@ export default function ExecutionDetailPage() {
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-1">
           <Card className="p-5">
+            {data.trigger_type === "schedule" && (
+              <div className="mb-4 rounded-lg border border-brand-200 bg-brand-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Disparado por: Schedule</p>
+                <div className="mt-1 space-y-0.5 text-xs text-gray-700">
+                  <div>Agendamento: <span className="font-medium">{data.schedule_name ?? `#${data.schedule_id}`}</span></div>
+                  <div>Horário previsto: {fmtTime(data.scheduled_for)}</div>
+                  <div>Horário de disparo: {fmtTime(data.triggered_at)}</div>
+                </div>
+              </div>
+            )}
             <h2 className="mb-4 text-sm font-semibold text-gray-900">Linha do tempo</h2>
             <ExecutionTimeline steps={steps} />
 

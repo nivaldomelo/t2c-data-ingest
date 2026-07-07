@@ -83,7 +83,22 @@ def get_execution(
     )
     if not execution:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution not found")
-    return ExecutionDetailOut.model_validate(execution)
+    detail = ExecutionDetailOut.model_validate(execution)
+    if execution.schedule_id:
+        from t2c_ingest.models.schedule import JobSchedule, ScheduleRun
+
+        sched = db.get(JobSchedule, execution.schedule_id)
+        detail.schedule_name = sched.name if sched else None
+        run = db.scalar(
+            select(ScheduleRun)
+            .where(ScheduleRun.execution_id == execution.id)
+            .order_by(ScheduleRun.id.desc())
+            .limit(1)
+        )
+        if run:
+            detail.scheduled_for = run.scheduled_for
+            detail.triggered_at = run.triggered_at
+    return detail
 
 
 @router.get("/{execution_id}/logs", response_model=PageOut[ExecutionLogOut])

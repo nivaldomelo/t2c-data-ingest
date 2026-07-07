@@ -23,7 +23,10 @@ from t2c_ingest.models.connection import Connection
 from t2c_ingest.models.execution import Execution
 from t2c_ingest.models.job import JobDefinition
 from t2c_ingest.schemas.execution import ExecutionOut
+from t2c_ingest.features.schedules.manager import create_schedule, schedule_out
 from t2c_ingest.models.job_code_version import JobCodeVersion
+from t2c_ingest.models.schedule import JobSchedule
+from t2c_ingest.schemas.schedule import ScheduleCreate, ScheduleOut
 from t2c_ingest.schemas.job import (
     JobCodeOut,
     JobCodeSaveRequest,
@@ -228,6 +231,44 @@ def _code_out(db: Session, job: JobDefinition, user: CurrentUser) -> JobCodeOut:
         last_modified_at=meta["last_modified_at"],
         size_bytes=meta["size_bytes"],
     )
+
+
+@router.get("/{job_id}/schedules", response_model=PageOut[ScheduleOut])
+def job_schedules(
+    job_id: int,
+    params: PageParams = Depends(),
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_SCHEDULES_READ)),
+) -> PageOut[ScheduleOut]:
+    if not db.get(JobDefinition, job_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    total = db.scalar(select(func.count(JobSchedule.id)).where(JobSchedule.job_id == job_id)) or 0
+    rows = db.scalars(
+        select(JobSchedule)
+        .where(JobSchedule.job_id == job_id)
+        .order_by(JobSchedule.name)
+        .offset(params.offset)
+        .limit(params.limit)
+    ).all()
+    return PageOut.build([schedule_out(db, r) for r in rows], total, params)
+
+
+@router.post("/{job_id}/schedules", response_model=ScheduleOut, status_code=status.HTTP_201_CREATED)
+def create_job_schedule(
+    job_id: int,
+    payload: ScheduleCreate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_SCHEDULES_WRITE)),
+) -> ScheduleOut:
+    if not db.get(JobDefinition, job_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    from t2c_ingest.features.schedules.service import is_valid_cron
+
+    if payload.cron_expression and not is_valid_cron(payload.cron_expression):
+        raise HTTPException(status_code=422, detail="Expressão cron inválida.")
+    sch = create_schedule(db, job_id=job_id, payload=payload, user=user)
+    db.commit()
+    return schedule_out(db, db.get(JobSchedule, sch.id))
 
 
 @router.get("/{job_id}/code", response_model=JobCodeOut)

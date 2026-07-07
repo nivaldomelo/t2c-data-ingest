@@ -111,6 +111,14 @@ class Settings(BaseSettings):
     # Worker queue polling (the API only enqueues; heavy work runs in the worker/cluster).
     worker_poll_interval_seconds: int = 2
 
+    # Scheduler (separate process) — checks due job_schedules and enqueues executions.
+    scheduler_timezone: str = Field(
+        default="America/Sao_Paulo", validation_alias="SCHEDULER_TIMEZONE"
+    )
+    scheduler_poll_interval_seconds: int = Field(
+        default=30, validation_alias="SCHEDULER_POLL_INTERVAL_SECONDS"
+    )
+
     cors_allow_origins: str = ""
 
     frontend_base_url: str | None = Field(default=None, validation_alias="FRONTEND_BASE_URL")

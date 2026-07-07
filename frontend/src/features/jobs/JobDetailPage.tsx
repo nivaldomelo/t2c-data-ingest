@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Code2, ListChecks, PlayCircle, Settings2 } from "lucide-react";
+import { CalendarClock, Code2, ListChecks, PlayCircle, Settings2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -13,13 +13,15 @@ import { JobOverviewTab } from "@/features/jobs/JobOverviewTab";
 import { JobExecutionsTab } from "@/features/jobs/JobExecutionsTab";
 import { JobCodeEditor } from "@/features/jobs/JobCodeEditor";
 import { JobSettingsTab } from "@/features/jobs/JobSettingsTab";
+import { JobSchedulesTab } from "@/features/schedules/JobSchedulesTab";
 import type { JobDetail } from "@/features/jobs/types";
 
-type TabKey = "overview" | "executions" | "code" | "settings";
+type TabKey = "overview" | "executions" | "schedules" | "code" | "settings";
 
 const TABS: { key: TabKey; label: string; icon: typeof PlayCircle }[] = [
   { key: "overview", label: "Visão geral", icon: ListChecks },
   { key: "executions", label: "Execuções", icon: PlayCircle },
+  { key: "schedules", label: "Agendamentos", icon: CalendarClock },
   { key: "code", label: "Código", icon: Code2 },
   { key: "settings", label: "Configurações", icon: Settings2 },
 ];
@@ -86,6 +88,7 @@ export default function JobDetailPage() {
 
       {tab === "overview" && <JobOverviewTab job={job} />}
       {tab === "executions" && <JobExecutionsTab jobId={jobId} canRun={canRun} />}
+      {tab === "schedules" && <JobSchedulesTab jobId={jobId} />}
       {tab === "code" && <JobCodeEditor jobId={jobId} />}
       {tab === "settings" && <JobSettingsTab job={job} />}
     </div>

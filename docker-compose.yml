@@ -88,6 +88,22 @@ services:
     depends_on: [api, spark-master]
     networks: [t2c]
 
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    hostname: t2c_data_ingest_scheduler
+    command: ["python", "scripts/run_scheduler.py"]
+    env_file: [./backend/.env]
+    environment:
+      ENV: dev
+      TZ: America/Sao_Paulo
+      SCHEDULER_TIMEZONE: America/Sao_Paulo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: [api, worker]
+    networks: [t2c]
+
   frontend:
     build:
       context: ./frontend

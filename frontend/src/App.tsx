@@ -9,6 +9,7 @@ import ConnectionsPage from "@/features/connections/ConnectionsPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import JobDetailPage from "@/features/jobs/JobDetailPage";
 import PipelinesPage from "@/features/pipelines/PipelinesPage";
+import SchedulesPage from "@/features/schedules/SchedulesPage";
 import ExecutionsPage from "@/features/executions/ExecutionsPage";
 import ExecutionDetailPage from "@/features/executions/ExecutionDetailPage";
 import AirflowPage from "@/features/airflow/AirflowPage";
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:id" element={<JobDetailPage />} />
         <Route path="/pipelines" element={<PipelinesPage />} />
+        <Route path="/schedules" element={<SchedulesPage />} />
         <Route path="/executions" element={<ExecutionsPage />} />
         <Route path="/executions/:id" element={<ExecutionDetailPage />} />
         <Route path="/airflow" element={<AirflowPage />} />

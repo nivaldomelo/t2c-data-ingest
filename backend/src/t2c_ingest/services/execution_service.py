@@ -18,15 +18,19 @@ def _engine_for_job(job: JobDefinition) -> str:
     return "python_worker" if job.type == "python" else "spark_cluster"
 
 
-def enqueue_job_execution(
+def create_job_execution(
     db: Session,
     *,
     job: JobDefinition,
-    user: CurrentUser,
+    triggered_by: str | None,
+    trigger_type: str = "manual",
+    schedule_id: int | None = None,
     parameters: dict | None = None,
 ) -> Execution:
-    """Register a queued execution for a job. The API never runs heavy work: the worker
-    (Python) or the Spark cluster picks up the queued execution and updates it."""
+    """Core: register a queued job execution (no CurrentUser dependency).
+
+    Used by the API (manual/schedule run) and the scheduler. The worker/Spark cluster picks
+    up the queued execution and runs it."""
     if not job.is_active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Job is inactive and cannot be run"
@@ -38,10 +42,12 @@ def enqueue_job_execution(
         target_name=job.name,
         job_type=job.type,
         status="queued",
+        trigger_type=trigger_type,
+        schedule_id=schedule_id,
         engine=_engine_for_job(job),
         cluster_id=job.cluster_id,
         parameters=parameters or {},
-        triggered_by=user.email,
+        triggered_by=triggered_by,
         queued_at=now,
     )
     db.add(execution)
@@ -50,13 +56,33 @@ def enqueue_job_execution(
         db.add(
             RuntimeParameter(execution_id=execution.id, key=str(key), value=_stringify(value))
         )
+    return execution
+
+
+def enqueue_job_execution(
+    db: Session,
+    *,
+    job: JobDefinition,
+    user: CurrentUser,
+    parameters: dict | None = None,
+    trigger_type: str = "manual",
+    schedule_id: int | None = None,
+) -> Execution:
+    execution = create_job_execution(
+        db,
+        job=job,
+        triggered_by=user.email,
+        trigger_type=trigger_type,
+        schedule_id=schedule_id,
+        parameters=parameters,
+    )
     record_audit(
         db,
         action="ingest.execution.enqueued",
         user=user,
         entity_type="execution",
         entity_id=execution.id,
-        detail={"target_type": "job", "job_id": job.id, "engine": execution.engine},
+        detail={"target_type": "job", "job_id": job.id, "engine": execution.engine, "trigger_type": trigger_type},
     )
     return execution
 

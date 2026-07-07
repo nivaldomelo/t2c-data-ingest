@@ -46,6 +46,8 @@ class ExecutionOut(BaseModel):
     target_name: str | None = None
     job_type: str | None = None
     status: str
+    trigger_type: str = "manual"
+    schedule_id: int | None = None
     engine: str | None = None
     cluster_id: int | None = None
     parameters: dict | None = None
@@ -62,6 +64,10 @@ class ExecutionOut(BaseModel):
 
 class ExecutionDetailOut(ExecutionOut):
     error_trace: str | None = None
+    # Populated when trigger_type == "schedule".
+    schedule_name: str | None = None
+    scheduled_for: datetime | None = None
+    triggered_at: datetime | None = None
     logs: list[ExecutionLogOut] = []
     artifacts: list[ExecutionArtifactOut] = []
     runtime_parameters: list[RuntimeParameterOut] = []

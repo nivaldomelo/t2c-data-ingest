@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import {
   Boxes,
+  CalendarClock,
   LayoutDashboard,
   PlayCircle,
   Plug,
@@ -18,6 +19,7 @@ const NAV = [
   { to: "/clusters", label: "Clusters", icon: Server },
   { to: "/jobs", label: "Jobs", icon: Boxes },
   { to: "/pipelines", label: "Pipelines", icon: Workflow },
+  { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/executions", label: "Execuções", icon: PlayCircle },
   { to: "/airflow", label: "Airflow legado", icon: Wind },
 ];

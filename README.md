@@ -211,6 +211,44 @@ Endpoints: `GET /api/v1/connections`, `GET /api/v1/connections/{id}`,
 > Os endpoints seguem o prefixo padrão do produto (`/api/v1/...`), consistente com as demais
 > áreas (jobs, pipelines, execuções).
 
+## Schedules (agendamento de jobs)
+
+Jobs podem ser executados automaticamente em horários agendados (estilo Airflow). Há uma
+tela geral **Schedules** no menu e uma aba **Agendamentos** no detalhe do job.
+
+- **Criar/editar:** nome, tipo (`cron/hourly/daily/weekly/monthly/manual`), expressão cron,
+  timezone (padrão `America/Sao_Paulo`), início/fim opcionais, parâmetros e ativo. Há
+  **templates rápidos** (a cada 15 min, de hora em hora, seg–sex 08:00, etc.) que preenchem o
+  cron, e um botão **Validar cron** que mostra as **próximas 5 execuções**.
+- **Ações:** ativar/inativar, executar agora, ver execuções (histórico de disparos), remover.
+- Um schedule `manual` não dispara sozinho (sem `next_run_at`).
+
+**Scheduler (container separado — `scheduler`).** Não roda no backend web. A cada
+`SCHEDULER_POLL_INTERVAL_SECONDS` (padrão 30s) ele reivindica schedules vencidos
+(`active` e `next_run_at <= now`) com `SELECT ... FOR UPDATE SKIP LOCKED` (dois schedulers
+nunca disparam o mesmo), enfileira uma execução (`trigger_type=schedule`,
+`triggered_by=system_scheduler`, `schedule_id`), grava um `schedule_runs` (único por
+`schedule_id + scheduled_for` → idempotente), atualiza `last_run_at`/`last_status` e
+**recalcula `next_run_at` a partir de agora** — se ficou parado, dispara o slot vencido uma
+vez e segue para o próximo, **sem criar centenas de execuções atrasadas**. Se `end_at` passou,
+o schedule é finalizado (inativado). Cálculo de horário via `croniter` respeitando a timezone.
+
+As execuções agendadas aparecem normalmente na aba **Execuções** do job; no detalhe da
+execução aparece *Disparado por: Schedule*, o nome do agendamento, o horário previsto e o de
+disparo.
+
+Endpoints: `GET/POST /api/v1/job-schedules`, `GET/PUT/DELETE /api/v1/job-schedules/{id}`,
+`POST /api/v1/job-schedules/{id}/{enable,disable,run}`, `GET /api/v1/job-schedules/{id}/runs`,
+`POST /api/v1/job-schedules/validate-cron`, `GET/POST /api/v1/jobs/{job_id}/schedules`,
+`GET /api/v1/job-schedules/summary`.
+
+Permissões: `ingest:schedules:read` (todos os perfis), `:write` (admin, editor), `:delete`
+(admin), `:enable`/`:disable` (admin, editor), `:run` (admin, editor, data_owner). Auditoria:
+`JOB_SCHEDULE_CREATED/UPDATED/ENABLED/DISABLED/DELETED/TRIGGERED/FAILED`.
+
+Exemplos de cron: `*/15 * * * *` (15 min), `0 * * * *` (de hora em hora), `0 8 * * 1-5`
+(seg–sex 08:00), `0 8-18 * * 1-5` (seg–sex, de hora em hora, 08–18h), `0 0 * * *` (meia-noite).
+
 ## Permissões (`ingest:*`)
 
 Derivadas dos perfis existentes do t2c_data, sem conceder privilégio administrativo indevido:

@@ -51,6 +51,11 @@ class Execution(TimestampMixin, Base):
     target_name: Mapped[str | None] = mapped_column(String(200))
     job_type: Mapped[str | None] = mapped_column(String(30))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued", index=True)
+    # manual | schedule | api | pipeline | retry
+    trigger_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="manual", server_default="manual"
+    )
+    schedule_id: Mapped[int | None] = mapped_column(Integer, index=True)
     # python_worker | spark_cluster
     engine: Mapped[str | None] = mapped_column(String(20))
     cluster_id: Mapped[int | None] = mapped_column(
