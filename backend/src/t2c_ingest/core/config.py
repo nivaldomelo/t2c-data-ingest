@@ -39,7 +39,12 @@ class Settings(BaseSettings):
     # configured in the t2c_data backend.
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 120
+    access_token_expire_minutes: int = 720
+
+    # "direct" (default): the ingest authenticates against t2c_data.users in the shared DB
+    # and mints the JWT itself (no dependency on the t2c_data backend being up).
+    # "proxy": forward credentials to the t2c_data backend at T2C_DATA_AUTH_BASE_URL.
+    auth_mode: str = Field(default="direct", validation_alias="AUTH_MODE")
 
     # URL of the t2c_data backend used only for the login proxy (issuing tokens). The ingest
     # product never stores passwords; it forwards credentials to t2c_data's /auth/login.

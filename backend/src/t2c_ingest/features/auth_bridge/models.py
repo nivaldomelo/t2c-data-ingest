@@ -37,7 +37,9 @@ class ReferenceUser(ReferenceBase):
     email: Mapped[str] = mapped_column(String(255))
     name: Mapped[str | None] = mapped_column(String(255))
     full_name: Mapped[str | None] = mapped_column(String(255))
+    password_hash: Mapped[str] = mapped_column(String(255))
     token_version: Mapped[int] = mapped_column(Integer, default=0)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     roles: Mapped[list["ReferenceRole"]] = relationship(
