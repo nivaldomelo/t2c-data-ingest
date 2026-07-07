@@ -64,8 +64,11 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+  del: <T = void>(path: string) => request<T>(path, { method: "DELETE" }),
 
   // Login forwards {email, password, mfa_code?} as JSON to the ingest proxy, which relays
   // to t2c_data. Surfaces the real upstream error (invalid credentials, MFA required, ...).

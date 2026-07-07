@@ -11,6 +11,10 @@ INGEST_CLUSTERS_READ = "ingest:clusters:read"
 INGEST_CLUSTERS_MANAGE = "ingest:clusters:manage"
 INGEST_AIRFLOW_READ = "ingest:airflow:read"
 INGEST_AIRFLOW_MIGRATE = "ingest:airflow:migrate"
+INGEST_CONNECTIONS_READ = "ingest:connections:read"
+INGEST_CONNECTIONS_WRITE = "ingest:connections:write"
+INGEST_CONNECTIONS_TEST = "ingest:connections:test"
+INGEST_CONNECTIONS_DELETE = "ingest:connections:delete"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -22,6 +26,10 @@ ALL_PERMISSIONS = {
     INGEST_CLUSTERS_MANAGE,
     INGEST_AIRFLOW_READ,
     INGEST_AIRFLOW_MIGRATE,
+    INGEST_CONNECTIONS_READ,
+    INGEST_CONNECTIONS_WRITE,
+    INGEST_CONNECTIONS_TEST,
+    INGEST_CONNECTIONS_DELETE,
 }
 
 # Mapping from t2c_data role -> ingest permissions.
@@ -38,6 +46,10 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CLUSTERS_MANAGE,
         INGEST_AIRFLOW_READ,
         INGEST_AIRFLOW_MIGRATE,
+        INGEST_CONNECTIONS_READ,
+        INGEST_CONNECTIONS_WRITE,
+        INGEST_CONNECTIONS_TEST,
+        INGEST_CONNECTIONS_DELETE,
     },
     "editor": {
         INGEST_READ,
@@ -46,19 +58,26 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_LOGS_READ,
         INGEST_CLUSTERS_READ,
         INGEST_AIRFLOW_READ,
+        INGEST_CONNECTIONS_READ,
+        INGEST_CONNECTIONS_WRITE,
+        INGEST_CONNECTIONS_TEST,
     },
     "viewer": {
         INGEST_READ,
         INGEST_LOGS_READ,
+        INGEST_CONNECTIONS_READ,
     },
     "stewardship": {
         INGEST_READ,
         INGEST_LOGS_READ,
+        INGEST_CONNECTIONS_READ,
     },
     "data_owner": {
         INGEST_READ,
         INGEST_RUN,
         INGEST_LOGS_READ,
+        INGEST_CONNECTIONS_READ,
+        INGEST_CONNECTIONS_TEST,
     },
 }
 

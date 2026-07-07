@@ -126,6 +126,30 @@ login no t2c_data e reutilize o token.
 3. O **worker** captura a execução, roda (`python` ou `spark-submit`), grava logs e status.
 4. Acompanhe em **Execuções** e veja os logs no detalhe.
 
+## Conexões (bancos de dados)
+
+O item de menu **Conexões** gerencia conexões PostgreSQL/MySQL reutilizáveis por jobs e
+pipelines. Ficam no schema próprio `t2c_data_ingest.connections`.
+
+- **Cadastrar/editar:** informe tipo (PostgreSQL sugere porta `5432`, MySQL `3306`), host,
+  banco, schema, usuário, senha, SSL e parâmetros extras (JSON).
+- **Testar:** `POST /api/v1/connections/{id}/test` abre a conexão real e roda `SELECT 1`
+  (psycopg para Postgres, pymysql para MySQL), atualizando `last_test_status`
+  (`success`/`failed`/`not_tested`), `last_test_message` e `last_tested_at`.
+- **Segurança da senha:** armazenada **criptografada** (Fernet, chave `CONNECTION_SECRET_KEY`
+  — cai no `JWT_SECRET_KEY` em dev). A API **nunca** retorna a senha; listagens/detalhes
+  expõem apenas `has_password`. Ao editar, senha em branco **mantém** a atual.
+- Jobs têm um campo opcional `connection_id` (ainda não obrigatório) já preparado para
+  vincular uma conexão cadastrada.
+
+Endpoints: `GET /api/v1/connections`, `GET /api/v1/connections/{id}`,
+`POST /api/v1/connections`, `PUT /api/v1/connections/{id}`,
+`DELETE /api/v1/connections/{id}`, `POST /api/v1/connections/{id}/test`,
+`GET /api/v1/connections/summary`.
+
+> Os endpoints seguem o prefixo padrão do produto (`/api/v1/...`), consistente com as demais
+> áreas (jobs, pipelines, execuções).
+
 ## Permissões (`ingest:*`)
 
 Derivadas dos perfis existentes do t2c_data, sem conceder privilégio administrativo indevido:
@@ -133,10 +157,13 @@ Derivadas dos perfis existentes do t2c_data, sem conceder privilégio administra
 | Perfil | Permissões |
 | --- | --- |
 | admin | todas |
-| editor | read, write, run, logs:read, clusters:read, airflow:read |
-| viewer | read, logs:read |
-| stewardship | read, logs:read |
-| data_owner | read, run, logs:read |
+| editor | read, write, run, logs:read, clusters:read, airflow:read, connections:read/write/test |
+| viewer | read, logs:read, connections:read |
+| stewardship | read, logs:read, connections:read |
+| data_owner | read, run, logs:read, connections:read/test |
+
+Permissões de conexões: `ingest:connections:read`, `ingest:connections:write`,
+`ingest:connections:test`, `ingest:connections:delete` (delete é exclusivo de admin).
 
 ## Migração do Airflow (gradual)
 

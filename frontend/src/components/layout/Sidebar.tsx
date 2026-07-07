@@ -3,6 +3,7 @@ import {
   Boxes,
   LayoutDashboard,
   PlayCircle,
+  Plug,
   Server,
   Wind,
   Workflow,
@@ -13,6 +14,7 @@ import { cn } from "@/lib/cn";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/connections", label: "Conexões", icon: Plug },
   { to: "/clusters", label: "Clusters", icon: Server },
   { to: "/jobs", label: "Jobs", icon: Boxes },
   { to: "/pipelines", label: "Pipelines", icon: Workflow },

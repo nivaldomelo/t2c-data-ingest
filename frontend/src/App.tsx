@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import LoginPage from "@/features/auth/LoginPage";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import ClustersPage from "@/features/clusters/ClustersPage";
+import ConnectionsPage from "@/features/connections/ConnectionsPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import PipelinesPage from "@/features/pipelines/PipelinesPage";
 import ExecutionsPage from "@/features/executions/ExecutionsPage";
@@ -35,6 +36,7 @@ export default function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/connections" element={<ConnectionsPage />} />
         <Route path="/clusters" element={<ClustersPage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/pipelines" element={<PipelinesPage />} />

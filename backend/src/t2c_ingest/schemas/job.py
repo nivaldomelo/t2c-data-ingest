@@ -17,6 +17,7 @@ class JobBase(BaseModel):
     arguments: list | None = None
     env_vars: dict | None = None
     cluster_id: int | None = None
+    connection_id: int | None = None
     engine: str | None = None
     timeout_seconds: int | None = None
     is_active: bool = True
@@ -43,6 +44,7 @@ class JobUpdate(BaseModel):
     arguments: list | None = None
     env_vars: dict | None = None
     cluster_id: int | None = None
+    connection_id: int | None = None
     engine: str | None = None
     timeout_seconds: int | None = None
     is_active: bool | None = None

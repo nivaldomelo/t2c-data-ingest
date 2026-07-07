@@ -30,6 +30,10 @@ class JobDefinition(TimestampMixin, Base):
     cluster_id: Mapped[int | None] = mapped_column(
         ForeignKey("clusters.id", ondelete="SET NULL"), index=True
     )
+    # Optional reusable DB connection (see features/connections). Not required yet.
+    connection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("connections.id", ondelete="SET NULL"), index=True
+    )
     # python_worker | spark_cluster (defaults derived from type when null)
     engine: Mapped[str | None] = mapped_column(String(20))
     timeout_seconds: Mapped[int | None] = mapped_column(Integer)

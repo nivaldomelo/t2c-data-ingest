@@ -1,0 +1,280 @@
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plug, Plus, Search } from "lucide-react";
+
+import { api } from "@/lib/api";
+import type { Page } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PageHeader, PrimaryButton, SecondaryButton } from "@/components/ui";
+import { Modal } from "@/components/ui/Modal";
+import { ConnectionSummaryCards } from "@/features/connections/ConnectionSummaryCards";
+import { ConnectionTable } from "@/features/connections/ConnectionTable";
+import { ConnectionForm } from "@/features/connections/ConnectionForm";
+import type { ConnectionSubmitPayload } from "@/features/connections/ConnectionForm";
+import { ConnectionStatusBadge } from "@/features/connections/ConnectionStatusBadge";
+import type {
+  Connection,
+  ConnectionSummary,
+  ConnectionTestResult,
+} from "@/features/connections/types";
+import { TYPE_LABEL } from "@/features/connections/types";
+
+const selectCls =
+  "h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20";
+
+export default function ConnectionsPage() {
+  const { can } = useAuth();
+  const qc = useQueryClient();
+
+  const [type, setType] = useState("");
+  const [status, setStatus] = useState("");
+  const [active, setActive] = useState("");
+  const [q, setQ] = useState("");
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Connection | null>(null);
+  const [viewing, setViewing] = useState<Connection | null>(null);
+  const [deleting, setDeleting] = useState<Connection | null>(null);
+  const [formTestResult, setFormTestResult] = useState<ConnectionTestResult | null>(null);
+  const [testingId, setTestingId] = useState<number | null>(null);
+
+  const perms = {
+    write: can("ingest:connections:write"),
+    test: can("ingest:connections:test"),
+    del: can("ingest:connections:delete"),
+  };
+
+  const query = useMemo(() => {
+    const p = new URLSearchParams({ page: "1", page_size: "25" });
+    if (type) p.set("connection_type", type);
+    if (status) p.set("last_test_status", status);
+    if (active) p.set("active", active);
+    if (q.trim()) p.set("q", q.trim());
+    return p.toString();
+  }, [type, status, active, q]);
+
+  const summary = useQuery({
+    queryKey: ["connections-summary"],
+    queryFn: () => api.get<ConnectionSummary>("/api/v1/connections/summary"),
+  });
+  const list = useQuery({
+    queryKey: ["connections", query],
+    queryFn: () => api.get<Page<Connection>>(`/api/v1/connections?${query}`),
+  });
+
+  function refresh() {
+    qc.invalidateQueries({ queryKey: ["connections"] });
+    qc.invalidateQueries({ queryKey: ["connections-summary"] });
+  }
+
+  const save = useMutation({
+    mutationFn: ({ payload, id }: { payload: ConnectionSubmitPayload; id?: number }) =>
+      id
+        ? api.put<Connection>(`/api/v1/connections/${id}`, payload)
+        : api.post<Connection>("/api/v1/connections", payload),
+  });
+
+  const test = useMutation({
+    mutationFn: (id: number) => api.post<ConnectionTestResult>(`/api/v1/connections/${id}/test`, {}),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => api.del(`/api/v1/connections/${id}`),
+  });
+
+  function openCreate() {
+    setEditing(null);
+    setFormTestResult(null);
+    setFormOpen(true);
+  }
+  function openEdit(c: Connection) {
+    setEditing(c);
+    setFormTestResult(null);
+    setFormOpen(true);
+  }
+
+  async function handleSubmit(payload: ConnectionSubmitPayload, testAfter: boolean) {
+    try {
+      const saved = await save.mutateAsync({ payload, id: editing?.id });
+      refresh();
+      if (testAfter) {
+        const result = await test.mutateAsync(saved.id);
+        setFormTestResult(result);
+        setEditing(saved);
+        refresh();
+      } else {
+        setFormOpen(false);
+      }
+    } catch (err) {
+      setFormTestResult({
+        status: "failed",
+        message: err instanceof Error ? err.message : "Erro ao salvar",
+        tested_at: null,
+      });
+    }
+  }
+
+  async function handleRowTest(c: Connection) {
+    setTestingId(c.id);
+    try {
+      await test.mutateAsync(c.id);
+    } finally {
+      setTestingId(null);
+      refresh();
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleting) return;
+    try {
+      await del.mutateAsync(deleting.id);
+      refresh();
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  const rows = list.data?.items ?? [];
+
+  return (
+    <div>
+      <PageHeader
+        icon={<Plug size={22} />}
+        title="Conexões"
+        description="Gerencie conexões com bancos de dados usadas por jobs e pipelines."
+        actions={
+          perms.write ? (
+            <PrimaryButton icon={<Plus size={16} />} onClick={openCreate}>
+              Nova conexão
+            </PrimaryButton>
+          ) : null
+        }
+      />
+
+      <ConnectionSummaryCards summary={summary.data} loading={summary.isLoading} />
+
+      {/* Filtros */}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Buscar por nome, host ou banco…"
+            className="h-10 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+          />
+        </div>
+        <select className={selectCls} value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="">Todos os tipos</option>
+          <option value="postgres">PostgreSQL</option>
+          <option value="mysql">MySQL</option>
+        </select>
+        <select className={selectCls} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">Qualquer teste</option>
+          <option value="success">Conectado</option>
+          <option value="failed">Falhou</option>
+          <option value="not_tested">Não testado</option>
+        </select>
+        <select className={selectCls} value={active} onChange={(e) => setActive(e.target.value)}>
+          <option value="">Ativos e inativos</option>
+          <option value="true">Somente ativos</option>
+          <option value="false">Somente inativos</option>
+        </select>
+      </div>
+
+      <div className="mt-4">
+        <ConnectionTable
+          rows={rows}
+          loading={list.isLoading}
+          perms={perms}
+          testingId={testingId}
+          onView={setViewing}
+          onEdit={openEdit}
+          onTest={handleRowTest}
+          onDelete={setDeleting}
+        />
+      </div>
+
+      {/* Modal criar/editar */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editing ? "Editar conexão" : "Nova conexão"}
+        description="Configure e teste a conexão com o banco de dados."
+        width="max-w-2xl"
+      >
+        <ConnectionForm
+          initial={editing}
+          saving={save.isPending || test.isPending}
+          testResult={formTestResult}
+          onSubmit={handleSubmit}
+          onCancel={() => setFormOpen(false)}
+        />
+      </Modal>
+
+      {/* Modal detalhes */}
+      <Modal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        title={viewing?.name ?? "Conexão"}
+        description={viewing?.description ?? undefined}
+        footer={
+          <SecondaryButton onClick={() => setViewing(null)}>Fechar</SecondaryButton>
+        }
+      >
+        {viewing && (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            <Detail label="Tipo" value={TYPE_LABEL[viewing.connection_type]} />
+            <Detail label="Último teste" value={<ConnectionStatusBadge status={viewing.last_test_status} />} />
+            <Detail label="Host" value={viewing.host ?? "—"} mono />
+            <Detail label="Porta" value={viewing.port ?? "—"} />
+            <Detail label="Banco" value={viewing.database_name ?? "—"} />
+            <Detail label="Schema" value={viewing.schema_name ?? "—"} />
+            <Detail label="Usuário" value={viewing.username ?? "—"} />
+            <Detail label="Senha" value={viewing.has_password ? "•••••••• (cadastrada)" : "não cadastrada"} />
+            <Detail label="SSL" value={viewing.ssl_enabled ? "Habilitado" : "Desabilitado"} />
+            <Detail label="Ativo" value={viewing.active ? "Sim" : "Não"} />
+            {viewing.last_test_message && (
+              <div className="col-span-2">
+                <Detail label="Mensagem do teste" value={viewing.last_test_message} />
+              </div>
+            )}
+          </dl>
+        )}
+      </Modal>
+
+      {/* Confirmar remoção */}
+      <Modal
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        title="Remover conexão"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setDeleting(null)}>Cancelar</SecondaryButton>
+            <PrimaryButton
+              className="bg-red-600 hover:bg-red-700"
+              loading={del.isPending}
+              onClick={handleDelete}
+            >
+              Remover
+            </PrimaryButton>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          Tem certeza que deseja remover a conexão <span className="font-semibold text-gray-900">{deleting?.name}</span>?
+          Esta ação não pode ser desfeita.
+        </p>
+      </Modal>
+    </div>
+  );
+}
+
+function Detail({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</dt>
+      <dd className={`mt-0.5 text-gray-800 ${mono ? "font-mono text-xs" : ""}`}>{value}</dd>
+    </div>
+  );
+}
