@@ -58,6 +58,7 @@ services:
       - ./spark:/opt/t2c/spark
       - ./spark/jars:/app/jars
       - ./python_jobs:/opt/t2c/python_jobs
+      - ./backups:/opt/t2c/backups
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on: [spark-master]

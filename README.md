@@ -134,20 +134,52 @@ Clique no nome de um job (ou em **Ver detalhes**) para abrir `/jobs/{id}`, com a
   timeout, retry, criador, última execução, último status e tempo médio.
 - **Execuções** — apenas as execuções daquele job, com filtros (status, data inicial/final,
   usuário, busca na mensagem) e paginação de 25. Clique numa execução para abrir o detalhe.
-- **Código** — visualizador somente leitura do script (fonte monoespaçada, numeração de
-  linhas, badge de linguagem, botão **Copiar código**).
+- **Código** — **editor estilo VS Code** (Monaco): tema escuro, numeração de linhas,
+  syntax highlight, badge de linguagem, **Copiar**, **Recarregar** e **Salvar**. Veja abaixo.
 - **Configurações** — argumentos e chaves de variáveis de ambiente (valores ocultados).
 
 Endpoints: `GET /api/v1/jobs/{id}`, `GET /api/v1/jobs/{id}/executions`
 (`page,page_size,status,date_from,date_to,user_id,search`), `GET /api/v1/jobs/{id}/code`.
 
-**Leitura de código — segurança.** O backend só serve arquivos **dentro dos diretórios
-permitidos** (`ALLOWED_SCRIPT_DIRS`, padrão `/opt/t2c/spark/jobs`, `/opt/t2c/python_jobs`,
-`/opt/spark/jobs`, `/app/jobs`). O caminho é resolvido com `realpath` e validado — path
-traversal (`../`), caminhos absolutos fora da allowlist (`/etc/passwd`) e arquivos inexistentes
-retornam erro tratado e amigável. O acesso ao código exige a permissão
-**`ingest:jobs:code:read`** (admin e editor); viewer/stewardship/data_owner veem detalhe e
-execuções, mas não o código.
+### Editor de código (visualizar, editar e salvar)
+
+A aba **Código** é um editor Monaco (mesma base do VS Code): tema escuro, syntax highlight,
+numeração de linhas, minimap, indicador de **alterações não salvas**, confirmação ao sair com
+alterações pendentes e alerta amigável quando o conteúdo contém possíveis credenciais
+(`password=`, `senha=`, `secret=`, `token=`, `access_key`, `secret_key`).
+
+- **Visualizar:** requer `ingest:jobs:code:read`. O cabeçalho mostra arquivo, caminho,
+  linguagem detectada, última modificação, tamanho e o modo (leitura ou edição).
+- **Editar/Salvar:** requer `ingest:jobs:code:write`. **Salvar** (`PUT /api/v1/jobs/{id}/code`)
+  fica desabilitado sem alterações e destacado em laranja quando há mudanças. Sem permissão de
+  escrita, o editor abre em **somente leitura**.
+- **Recarregar** recarrega o arquivo do servidor (descarta alterações locais após confirmação).
+
+**Extensões editáveis:** `.py .sql .sh .yaml .yml .json .txt` (`JOB_CODE_EDITABLE_EXTENSIONS`).
+Extensões sensíveis (`.env .pem .key .crt .p12 .jks .properties .ini`) **nunca** são editáveis.
+
+**Backups e histórico:** antes de sobrescrever, é criada uma cópia em
+`JOB_CODE_BACKUP_DIR` (padrão `/opt/t2c/backups/job-code`, montado de `./backups`) no formato
+`{job_id}_{arquivo}_{timestampUTC}.bak`. Cada salvamento grava uma linha em
+`t2c_data_ingest.job_code_versions` (hashes/tamanhos antes/depois, autor, resumo) e um evento
+`JOB_CODE_UPDATED` em `t2c_data_ingest.audit_events`.
+
+**Controle de conflito (optimistic lock):** a leitura devolve `last_modified_at`; o
+salvamento envia esse valor em `expected_last_modified_at`. Se o arquivo mudou nesse meio-tempo,
+a API retorna erro tratado: *"Este arquivo foi alterado por outro usuário ou processo.
+Recarregue o código antes de salvar."*
+
+**Segurança de caminho.** O backend só serve/edita arquivos **dentro dos diretórios permitidos**
+(`ALLOWED_SCRIPT_DIRS`, padrão `/opt/t2c/spark/jobs`, `/opt/t2c/python_jobs`, `/opt/spark/jobs`,
+`/app/jobs`). O caminho é resolvido com `realpath` — path traversal (`../`), caminhos fora da
+allowlist (`/etc/passwd`) e arquivos inexistentes retornam erro amigável.
+
+**Boas práticas:** nunca coloque senhas/tokens no código. Use as **Conexões** cadastradas
+(resolvidas em tempo de execução) ou variáveis de ambiente seguras — o editor alerta ao detectar
+padrões de credencial, mas a responsabilidade final é do autor.
+
+Permissões: `ingest:jobs:code:read` (admin, editor, data_owner, stewardship) e
+`ingest:jobs:code:write` (admin, editor). Viewer não acessa o código.
 
 ## Conexões (bancos de dados)
 

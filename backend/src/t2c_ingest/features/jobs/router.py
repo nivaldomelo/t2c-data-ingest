@@ -11,13 +11,22 @@ from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
 from t2c_ingest.features.auth_bridge import permissions as perms
 from t2c_ingest.features.connections.repository import get_connection_by_ref
-from t2c_ingest.features.jobs.code_service import CodeError, detect_language, read_job_code
+from t2c_ingest.features.jobs.code_service import (
+    CodeError,
+    detect_language,
+    file_metadata,
+    is_editable_extension,
+    read_job_code,
+    write_job_code,
+)
 from t2c_ingest.models.connection import Connection
 from t2c_ingest.models.execution import Execution
 from t2c_ingest.models.job import JobDefinition
 from t2c_ingest.schemas.execution import ExecutionOut
+from t2c_ingest.models.job_code_version import JobCodeVersion
 from t2c_ingest.schemas.job import (
     JobCodeOut,
+    JobCodeSaveRequest,
     JobCreate,
     JobDetailOut,
     JobOut,
@@ -201,24 +210,91 @@ def job_executions(
     return PageOut.build([ExecutionOut.model_validate(r) for r in rows], total, params)
 
 
+def _code_out(db: Session, job: JobDefinition, user: CurrentUser) -> JobCodeOut:
+    import os
+
+    content = read_job_code(job.script_path or "")
+    meta = file_metadata(job.script_path or "")
+    can_write = user.has(perms.INGEST_JOBS_CODE_WRITE) and is_editable_extension(job.script_path or "")
+    return JobCodeOut(
+        job_id=job.id,
+        job_name=job.name,
+        script_path=job.script_path,
+        file_name=os.path.basename(job.script_path or "") or None,
+        language=detect_language(job.script_path or "", job.type),
+        content=content,
+        editable=can_write,
+        read_only=not can_write,
+        last_modified_at=meta["last_modified_at"],
+        size_bytes=meta["size_bytes"],
+    )
+
+
 @router.get("/{job_id}/code", response_model=JobCodeOut)
 def job_code(
     job_id: int,
     db: Session = Depends(get_db),
-    _: CurrentUser = Depends(require_permission(perms.INGEST_JOBS_CODE_READ)),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_JOBS_CODE_READ)),
 ) -> JobCodeOut:
     job = db.get(JobDefinition, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     try:
-        content = read_job_code(job.script_path or "")
+        return _code_out(db, job, user)
     except CodeError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
-    return JobCodeOut(
-        job_id=job.id,
-        job_name=job.name,
-        script_path=job.script_path,
-        language=detect_language(job.script_path or "", job.type),
-        content=content,
-        read_only=True,
+
+
+@router.put("/{job_id}/code", response_model=JobCodeOut)
+def save_job_code(
+    job_id: int,
+    payload: JobCodeSaveRequest,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_JOBS_CODE_WRITE)),
+) -> JobCodeOut:
+    job = db.get(JobDefinition, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    try:
+        result = write_job_code(
+            job.script_path or "",
+            payload.content,
+            payload.expected_last_modified_at,
+            job_id=job.id,
+        )
+    except CodeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+
+    # History + audit.
+    db.add(
+        JobCodeVersion(
+            job_id=job.id,
+            script_path=job.script_path or "",
+            backup_path=result["backup_path"],
+            content_hash_before=result["content_hash_before"],
+            content_hash_after=result["content_hash_after"],
+            changed_by=user.email,
+            change_summary=payload.change_summary,
+            size_before_bytes=result["size_before_bytes"],
+            size_after_bytes=result["size_after_bytes"],
+        )
     )
+    record_audit(
+        db,
+        action="JOB_CODE_UPDATED",
+        user=user,
+        entity_type="job",
+        entity_id=job.id,
+        detail={
+            "script_path": job.script_path,
+            "backup_path": result["backup_path"],
+            "size_after_bytes": result["size_after_bytes"],
+        },
+    )
+    job.updated_by = user.email
+    db.commit()
+
+    try:
+        return _code_out(db, job, user)
+    except CodeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc

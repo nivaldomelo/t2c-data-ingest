@@ -86,6 +86,28 @@ class Settings(BaseSettings):
     def allowed_script_dirs_list(self) -> list[str]:
         return [d.strip() for d in self.allowed_script_dirs.split(",") if d.strip()]
 
+    # Extensions the code editor may edit/save. Anything else is read-only / rejected on save.
+    job_code_editable_extensions: str = Field(
+        default=".py,.sql,.sh,.yaml,.yml,.json,.txt",
+        validation_alias="JOB_CODE_EDITABLE_EXTENSIONS",
+    )
+    # Extensions never allowed for editing (secrets/keys/config).
+    job_code_blocked_extensions: str = Field(
+        default=".env,.pem,.key,.crt,.p12,.jks,.properties,.ini",
+        validation_alias="JOB_CODE_BLOCKED_EXTENSIONS",
+    )
+    job_code_backup_dir: str = Field(
+        default="/opt/t2c/backups/job-code", validation_alias="JOB_CODE_BACKUP_DIR"
+    )
+
+    @property
+    def job_code_editable_extensions_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.job_code_editable_extensions.split(",") if e.strip()}
+
+    @property
+    def job_code_blocked_extensions_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.job_code_blocked_extensions.split(",") if e.strip()}
+
     # Worker queue polling (the API only enqueues; heavy work runs in the worker/cluster).
     worker_poll_interval_seconds: int = 2
 

@@ -17,3 +17,4 @@ from t2c_ingest.models.execution import (  # noqa: F401
 )
 from t2c_ingest.models.airflow import AirflowDagImport, AirflowTaskImport  # noqa: F401
 from t2c_ingest.models.audit import AuditEvent  # noqa: F401
+from t2c_ingest.models.job_code_version import JobCodeVersion  # noqa: F401

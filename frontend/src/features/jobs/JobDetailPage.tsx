@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/ui";
 import { JobHeader } from "@/features/jobs/JobHeader";
 import { JobOverviewTab } from "@/features/jobs/JobOverviewTab";
 import { JobExecutionsTab } from "@/features/jobs/JobExecutionsTab";
-import { JobCodeTab } from "@/features/jobs/JobCodeTab";
+import { JobCodeEditor } from "@/features/jobs/JobCodeEditor";
 import { JobSettingsTab } from "@/features/jobs/JobSettingsTab";
 import type { JobDetail } from "@/features/jobs/types";
 
@@ -86,7 +86,7 @@ export default function JobDetailPage() {
 
       {tab === "overview" && <JobOverviewTab job={job} />}
       {tab === "executions" && <JobExecutionsTab jobId={jobId} canRun={canRun} />}
-      {tab === "code" && <JobCodeTab jobId={jobId} />}
+      {tab === "code" && <JobCodeEditor jobId={jobId} />}
       {tab === "settings" && <JobSettingsTab job={job} />}
     </div>
   );

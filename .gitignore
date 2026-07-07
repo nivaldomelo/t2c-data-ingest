@@ -25,6 +25,10 @@ yarn-error.log*
 # Spark scratch / data outputs (keep the folder, ignore contents)
 spark/data/*
 !spark/data/.gitkeep
+
+# Job code backups (keep the folder, ignore contents)
+backups/*
+!backups/.gitkeep
 *.parquet
 *.log
 

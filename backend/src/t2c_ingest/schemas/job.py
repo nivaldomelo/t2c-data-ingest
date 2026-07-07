@@ -84,9 +84,21 @@ class JobCodeOut(BaseModel):
     job_id: int
     job_name: str
     script_path: str | None = None
+    file_name: str | None = None
     language: str
     content: str
+    editable: bool = False
     read_only: bool = True
+    # Opaque token for optimistic-lock: returned verbatim and sent back as
+    # expected_last_modified_at. Kept as a string so it round-trips without reformatting.
+    last_modified_at: str | None = None
+    size_bytes: int | None = None
+
+
+class JobCodeSaveRequest(BaseModel):
+    content: str
+    expected_last_modified_at: str | None = None
+    change_summary: str | None = None
 
 
 class JobRunRequest(BaseModel):
