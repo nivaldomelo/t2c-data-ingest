@@ -79,9 +79,15 @@ def main() -> int:
 
     src_host = _require_env("SOURCE_HOST")
     src_port = os.environ.get("SOURCE_PORT", "3306")
-    src_db = os.environ.get("SOURCE_DB") or args.source_table.split(".")[0]
     src_user = _require_env("SOURCE_USER")
     src_password = _require_env("SOURCE_PASSWORD")
+    # A qualified --source-table (db.table) drives the source database; otherwise use the
+    # connection's database (SOURCE_DB). The JDBC dbtable stays fully qualified when given.
+    _src_parts = args.source_table.split(".")
+    if len(_src_parts) == 2:
+        src_db, src_dbtable = _src_parts[0], args.source_table
+    else:
+        src_db, src_dbtable = (os.environ.get("SOURCE_DB") or ""), args.source_table
 
     tgt_host = _require_env("TARGET_HOST")
     tgt_port = os.environ.get("TARGET_PORT", "5432")
@@ -93,10 +99,8 @@ def main() -> int:
     target_table = args.target_table
     staging_fqn = f"{target_schema}.{args.staging_table}"
     target_fqn = f"{target_schema}.{target_table}"
-    # Source table name (strip the database qualifier for the JDBC dbtable if present).
-    src_table = args.source_table.split(".")[-1]
 
-    print(f"[payments] origem MySQL {src_host}:{src_port}/{src_db} tabela={src_table}")
+    print(f"[payments] origem MySQL {src_host}:{src_port}/{src_db} tabela={src_dbtable}")
     print(f"[payments] destino PostgreSQL {tgt_host}:{tgt_port}/{tgt_db} tabela={target_fqn}")
 
     spark = (
@@ -114,7 +118,7 @@ def main() -> int:
     raw = (
         spark.read.format("jdbc")
         .option("url", mysql_url)
-        .option("dbtable", src_table)
+        .option("dbtable", src_dbtable)
         .option("user", src_user)
         .option("password", src_password)
         .option("driver", "com.mysql.cj.jdbc.Driver")

@@ -73,6 +73,9 @@ services:
     environment:
       ENV: dev
       SPARK_MASTER_URL: spark://spark-master:7077
+      # Driver host reachable by the spark workers (service name, no underscores).
+      SPARK_DRIVER_HOST: worker
+      SPARK_DRIVER_BIND_ADDRESS: 0.0.0.0
     volumes:
       - ./spark/data:/data
       - ./spark/jobs:/opt/spark/jobs

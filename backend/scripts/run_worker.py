@@ -79,6 +79,12 @@ def _build_command(job: JobDefinition) -> list[str]:
     args = [str(a) for a in (job.arguments or [])]
     if job.type in {"spark_python", "spark_submit"}:
         cmd = ["spark-submit", "--master", settings.spark_master_url]
+        # Driver host/bind for standalone client mode. Spark rejects hostnames with '_'
+        # ("Invalid Spark URL"), so we advertise a DNS-valid name (the compose service).
+        if settings.spark_driver_host:
+            cmd += ["--conf", f"spark.driver.host={settings.spark_driver_host}"]
+        if settings.spark_driver_bind_address:
+            cmd += ["--conf", f"spark.driver.bindAddress={settings.spark_driver_bind_address}"]
         cmd += _jdbc_jar_args()
         # Prefer IPv4 in the JVM (Docker bridge often lacks an IPv6 route).
         cmd += [

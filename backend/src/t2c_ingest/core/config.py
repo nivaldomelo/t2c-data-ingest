@@ -62,6 +62,12 @@ class Settings(BaseSettings):
         default="spark://spark-master:7077", validation_alias="SPARK_MASTER_URL"
     )
     spark_jobs_dir: str = Field(default="/opt/spark/jobs", validation_alias="SPARK_JOBS_DIR")
+    # Driver host advertised to executors. MUST be a DNS-valid name (NO underscores — Spark
+    # rejects them as "Invalid Spark URL"). Use the compose service name (e.g. "worker").
+    spark_driver_host: str | None = Field(default=None, validation_alias="SPARK_DRIVER_HOST")
+    spark_driver_bind_address: str | None = Field(
+        default=None, validation_alias="SPARK_DRIVER_BIND_ADDRESS"
+    )
     # Local JDBC jars (mounted from ./spark/jars) added to spark-submit via --jars when present.
     spark_local_jars_dir: str = Field(default="/app/jars", validation_alias="SPARK_LOCAL_JARS_DIR")
     # Maven coordinates fetched by spark-submit --packages when the JDBC jars are not local.
