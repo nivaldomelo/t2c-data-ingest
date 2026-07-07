@@ -11,6 +11,8 @@ does not change.
 """
 from __future__ import annotations
 
+import glob
+import os
 import subprocess
 import sys
 import time
@@ -19,11 +21,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from sqlalchemy import select, update  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 from t2c_ingest.core.config import settings  # noqa: E402
 from t2c_ingest.core.db import SessionLocal  # noqa: E402
-from t2c_ingest.models.execution import Execution, ExecutionLog  # noqa: E402
+from t2c_ingest.features.connections.worker_support import resolve_connections  # noqa: E402
+from t2c_ingest.models.execution import Execution, ExecutionArtifact, ExecutionLog  # noqa: E402
 from t2c_ingest.models.job import JobDefinition  # noqa: E402
 
 
@@ -62,16 +65,53 @@ def _claim_next(db) -> Execution | None:
     return execution
 
 
-def _build_command(job: JobDefinition, execution: Execution) -> list[str]:
+def _jdbc_jar_args() -> list[str]:
+    """Prefer local JDBC jars (mounted from ./spark/jars); otherwise fetch via --packages."""
+    jars = sorted(glob.glob(os.path.join(settings.spark_local_jars_dir, "*.jar")))
+    if jars:
+        return ["--jars", ",".join(jars)]
+    if settings.spark_jdbc_packages.strip():
+        return ["--packages", settings.spark_jdbc_packages.strip()]
+    return []
+
+
+def _build_command(job: JobDefinition) -> list[str]:
     args = [str(a) for a in (job.arguments or [])]
     if job.type in {"spark_python", "spark_submit"}:
         cmd = ["spark-submit", "--master", settings.spark_master_url]
+        cmd += _jdbc_jar_args()
+        # Prefer IPv4 in the JVM (Docker bridge often lacks an IPv6 route).
+        cmd += [
+            "--conf",
+            "spark.driver.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
+            "--conf",
+            "spark.executor.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
+        ]
         if job.type == "spark_submit" and job.main_class:
             cmd += ["--class", job.main_class]
         cmd += [job.script_path or ""]
         return cmd + args
     # plain python
     return ["python", job.script_path or ""] + args
+
+
+def _redact(cmd: list[str]) -> str:
+    """Command line for logging. Connection args carry only names, and passwords are never
+    on the command line (they go via env), so the command is safe to log verbatim."""
+    return " ".join(cmd)
+
+
+def _capture_summary(db, execution: Execution, stdout: str) -> None:
+    for line in stdout.splitlines():
+        if line.startswith("INGEST_SUMMARY:"):
+            summary = line[len("INGEST_SUMMARY:"):].strip()
+            execution.final_message = summary
+            db.add(
+                ExecutionArtifact(
+                    execution_id=execution.id, name="ingest_summary", kind="metric", uri=summary
+                )
+            )
+            return
 
 
 def _run_one(db, execution: Execution) -> None:
@@ -84,17 +124,43 @@ def _run_one(db, execution: Execution) -> None:
         db.commit()
         return
 
-    cmd = _build_command(job, execution)
-    seq = _log(db, execution.id, seq, "INFO", f"$ {' '.join(cmd)}")
+    # Resolve registered connections referenced in the job args (validates active + tests).
+    connection_env: dict[str, str] = {}
+    try:
+        resolved = resolve_connections(db, job.arguments or [], test=True)
+        for note in resolved.notes:
+            seq = _log(db, execution.id, seq, "INFO", note)
+        if resolved.error:
+            execution.status = "failed"
+            execution.final_message = resolved.error
+            execution.finished_at = _now()
+            _log(db, execution.id, seq, "ERROR", resolved.error)
+            db.commit()
+            return
+        connection_env = resolved.env
+    except Exception as exc:  # noqa: BLE001
+        execution.status = "failed"
+        execution.final_message = f"Falha ao resolver conexões: {exc}"
+        execution.error_trace = repr(exc)
+        execution.finished_at = _now()
+        _log(db, execution.id, seq, "ERROR", repr(exc))
+        db.commit()
+        return
+
+    cmd = _build_command(job)
+    seq = _log(db, execution.id, seq, "INFO", f"$ {_redact(cmd)}")
     started = time.monotonic()
     try:
-        env = {**(job.env_vars or {})}
+        # Env precedence: process env <- job.env_vars <- resolved connection creds.
+        env = {**_os_environ()}
+        env.update({k: str(v) for k, v in (job.env_vars or {}).items()})
+        env.update(connection_env)  # SOURCE_*/TARGET_* (includes decrypted passwords)
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=job.timeout_seconds or None,
-            env={**_os_environ(), **{k: str(v) for k, v in env.items()}},
+            env=env,
         )
         if proc.stdout:
             seq = _log(db, execution.id, seq, "INFO", proc.stdout)
@@ -104,9 +170,11 @@ def _run_one(db, execution: Execution) -> None:
         if proc.returncode == 0:
             execution.status = "success"
             execution.final_message = "Completed successfully"
+            _capture_summary(db, execution, proc.stdout or "")
         else:
             execution.status = "failed"
             execution.final_message = f"Exited with code {proc.returncode}"
+            execution.error_trace = (proc.stderr or "")[:20000]
         execution.duration_seconds = duration
     except subprocess.TimeoutExpired:
         execution.status = "timeout"
@@ -125,8 +193,6 @@ def _run_one(db, execution: Execution) -> None:
 
 
 def _os_environ() -> dict:
-    import os
-
     return dict(os.environ)
 
 

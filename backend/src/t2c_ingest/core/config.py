@@ -62,6 +62,13 @@ class Settings(BaseSettings):
         default="spark://spark-master:7077", validation_alias="SPARK_MASTER_URL"
     )
     spark_jobs_dir: str = Field(default="/opt/spark/jobs", validation_alias="SPARK_JOBS_DIR")
+    # Local JDBC jars (mounted from ./spark/jars) added to spark-submit via --jars when present.
+    spark_local_jars_dir: str = Field(default="/app/jars", validation_alias="SPARK_LOCAL_JARS_DIR")
+    # Maven coordinates fetched by spark-submit --packages when the JDBC jars are not local.
+    spark_jdbc_packages: str = Field(
+        default="org.postgresql:postgresql:42.7.10,com.mysql:mysql-connector-j:9.1.0",
+        validation_alias="SPARK_JDBC_PACKAGES",
+    )
 
     # Worker queue polling (the API only enqueues; heavy work runs in the worker/cluster).
     worker_poll_interval_seconds: int = 2

@@ -142,6 +142,12 @@ pipelines. Ficam no schema próprio `t2c_data_ingest.connections`.
 - Jobs têm um campo opcional `connection_id` (ainda não obrigatório) já preparado para
   vincular uma conexão cadastrada.
 
+Um job pode referenciar conexões cadastradas pelos argumentos `--source-connection` /
+`--target-connection` (por **nome ou id**). O worker resolve, valida (ativa), testa a
+conectividade, descriptografa a senha e injeta as credenciais por variável de ambiente
+(`SOURCE_*` / `TARGET_*`) — nunca em linha de comando nem em log. Exemplo completo de job
+Spark MySQL→PostgreSQL: [docs/job-payments-mysql-to-postgres.md](docs/job-payments-mysql-to-postgres.md).
+
 Endpoints: `GET /api/v1/connections`, `GET /api/v1/connections/{id}`,
 `POST /api/v1/connections`, `PUT /api/v1/connections/{id}`,
 `DELETE /api/v1/connections/{id}`, `POST /api/v1/connections/{id}/test`,

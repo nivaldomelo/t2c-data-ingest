@@ -55,6 +55,7 @@ services:
     volumes:
       - ./spark/data:/data
       - ./spark/jobs:/opt/spark/jobs
+      - ./spark:/opt/t2c/spark
       - ./spark/jars:/app/jars
       - ./python_jobs:/opt/t2c/python_jobs
     extra_hosts:
@@ -75,6 +76,7 @@ services:
     volumes:
       - ./spark/data:/data
       - ./spark/jobs:/opt/spark/jobs
+      - ./spark:/opt/t2c/spark
       - ./spark/jars:/app/jars
       - ./python_jobs:/opt/t2c/python_jobs
     extra_hosts:
