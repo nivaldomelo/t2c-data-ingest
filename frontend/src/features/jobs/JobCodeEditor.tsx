@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useBlocker } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import {
@@ -16,8 +15,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { MONACO_LANGUAGE } from "@/lib/monaco-setup";
 import { cn } from "@/lib/cn";
-import { EmptyState, PrimaryButton, SecondaryButton } from "@/components/ui";
-import { Modal } from "@/components/ui/Modal";
+import { EmptyState } from "@/components/ui";
 import { Skeleton } from "@/components/ui/LoadingSkeleton";
 
 interface JobCode {
@@ -73,10 +71,8 @@ export function JobCodeEditor({ jobId }: { jobId: number }) {
   const editable = !!data?.editable;
   const hasCredential = useMemo(() => dirty && CREDENTIAL_RE.test(value), [dirty, value]);
 
-  // Guard in-app navigation while there are unsaved changes.
-  const blocker = useBlocker(useCallback(() => dirty, [dirty]));
-
-  // Guard browser refresh/close.
+  // Guard browser refresh/close. (In-app navigation with unsaved changes is left to the
+  // beforeunload prompt; useBlocker requires a data router which this app does not use.)
   useEffect(() => {
     if (!dirty) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -259,25 +255,6 @@ export function JobCodeEditor({ jobId }: { jobId: number }) {
           loading={<div className="p-6 text-sm text-slate-400">Carregando editor…</div>}
         />
       </div>
-
-      {/* Confirmação ao sair com alterações não salvas */}
-      <Modal
-        open={blocker.state === "blocked"}
-        onClose={() => blocker.reset?.()}
-        title="Alterações não salvas"
-        footer={
-          <>
-            <SecondaryButton onClick={() => blocker.reset?.()}>Continuar editando</SecondaryButton>
-            <PrimaryButton className="bg-red-600 hover:bg-red-700" onClick={() => blocker.proceed?.()}>
-              Sair sem salvar
-            </PrimaryButton>
-          </>
-        }
-      >
-        <p className="text-sm text-gray-600">
-          Existem alterações não salvas. Deseja sair mesmo assim?
-        </p>
-      </Modal>
     </div>
   );
 }
