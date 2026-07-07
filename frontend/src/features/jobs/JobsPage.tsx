@@ -1,17 +1,27 @@
-import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Boxes, Play } from "lucide-react";
 
 import { api } from "@/lib/api";
 import type { Page } from "@/lib/api";
-import { DataTable, StatusBadge } from "@/components/ui/Table";
+import { DataTable, EmptyState, PageHeader, PrimaryButton, StatusBadge } from "@/components/ui";
+import type { Column } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 
 interface Job {
   id: number;
   name: string;
+  description: string | null;
   type: string;
   script_path: string | null;
   is_active: boolean;
 }
+
+const TYPE_LABEL: Record<string, string> = {
+  python: "Python",
+  spark_python: "Spark · Python",
+  spark_sql: "Spark · SQL",
+  spark_submit: "Spark · Submit",
+};
 
 export default function JobsPage() {
   const { can } = useAuth();
@@ -26,42 +36,66 @@ export default function JobsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["executions"] }),
   });
 
-  const rows = data?.items ?? [];
+  const columns: Column<Job>[] = [
+    {
+      key: "name",
+      header: "Job",
+      render: (j) => (
+        <div>
+          <div className="font-medium text-gray-900">{j.name}</div>
+          <div className="font-mono text-xs text-gray-400">{j.script_path ?? "—"}</div>
+        </div>
+      ),
+    },
+    {
+      key: "type",
+      header: "Tipo",
+      render: (j) => (
+        <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+          {TYPE_LABEL[j.type] ?? j.type}
+        </span>
+      ),
+    },
+    { key: "status", header: "Status", render: (j) => <StatusBadge status={j.is_active ? "active" : "inactive"} /> },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (j) =>
+        can("ingest:run") ? (
+          <PrimaryButton
+            size="sm"
+            icon={<Play size={14} />}
+            loading={run.isPending && run.variables === j.id}
+            disabled={!j.is_active}
+            onClick={() => run.mutate(j.id)}
+          >
+            Executar
+          </PrimaryButton>
+        ) : null,
+    },
+  ];
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900">Jobs</h1>
-      <p className="text-sm text-slate-500">Jobs Python e Spark cadastrados.</p>
-
-      <div className="mt-6">
-        <DataTable
-          columns={["Nome", "Tipo", "Script", "Status", "Ações"]}
-          isEmpty={!isLoading && rows.length === 0}
-          empty="Nenhum job cadastrado."
-        >
-          {rows.map((j) => (
-            <tr key={j.id}>
-              <td className="px-4 py-3 font-medium text-slate-800">{j.name}</td>
-              <td className="px-4 py-3 text-slate-600">{j.type}</td>
-              <td className="px-4 py-3 font-mono text-xs text-slate-500">{j.script_path ?? "—"}</td>
-              <td className="px-4 py-3">
-                <StatusBadge status={j.is_active ? "active" : "inactive"} />
-              </td>
-              <td className="px-4 py-3">
-                {can("ingest:run") && (
-                  <button
-                    onClick={() => run.mutate(j.id)}
-                    disabled={run.isPending || !j.is_active}
-                    className="rounded-lg bg-brand-600 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-                  >
-                    Executar
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </DataTable>
-      </div>
+      <PageHeader
+        icon={<Boxes size={22} />}
+        title="Jobs"
+        description="Jobs Python e Spark cadastrados na plataforma."
+      />
+      <DataTable
+        columns={columns}
+        rows={data?.items ?? []}
+        rowKey={(j) => j.id}
+        loading={isLoading}
+        empty={
+          <EmptyState
+            icon={<Boxes size={24} />}
+            title="Nenhum job cadastrado"
+            description="Cadastre um job Python ou Spark para começar a executar ingestões."
+          />
+        }
+      />
     </div>
   );
 }

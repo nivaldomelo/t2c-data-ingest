@@ -6,6 +6,38 @@
   color-scheme: light;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
-  @apply bg-slate-50 text-slate-800 antialiased;
+  @apply bg-slate-50 text-gray-900 antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Scrollbar discreta e moderna */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+/* Scrollbar escura para áreas de terminal/logs */
+.scrollbar-dark {
+  scrollbar-color: #3b4252 transparent;
+}
+.scrollbar-dark::-webkit-scrollbar-thumb {
+  background-color: #3b4252;
 }
