@@ -38,15 +38,20 @@ upsert por id** (a origem não tem `updated_at`).
 1. Cadastrar em **Conexões**:
    - `mysql_1` (MySQL) apontando para o banco de origem.
    - `postgres_1` (PostgreSQL) apontando para `andromeda` (schema `spark`).
-2. No PostgreSQL de destino, os tipos enum e a tabela final devem existir (o job **não** recria
-   `spark.payments`):
+2. No PostgreSQL de destino, o job garante automaticamente (idempotente, **não recria** se já
+   existir): o schema `spark`, os tipos `spark.payment_method_enum` / `spark.payment_status_enum`,
+   a tabela final `spark.payments` (conforme o DDL do projeto) e a staging
+   `spark.stg_payments_ingest` (VARCHAR nos enums, truncada a cada execução). Se preferir criar
+   você mesmo:
    ```sql
    CREATE SCHEMA IF NOT EXISTS spark;
    CREATE TYPE spark.payment_method_enum AS ENUM ('PIX','CREDIT_CARD','DEBIT_CARD','BANK_SLIP','CASH');
    CREATE TYPE spark.payment_status_enum AS ENUM ('PENDING','AUTHORIZED','PAID','FAILED','REFUNDED','CHARGEBACK');
-   -- + a tabela spark.payments conforme o DDL do projeto
    ```
-   A staging `spark.stg_payments_ingest` é criada automaticamente pelo job (VARCHAR nos enums).
+
+> Observações da carga: valores de ENUM do MySQL podem vir preenchidos com espaços via JDBC;
+> o job aplica `trim()` antes de validar/gravar. Uma `--source-table` qualificada
+> (`software_test_lab.payments`) define o banco de origem, independente do banco da conexão.
 3. Drivers JDBC: o worker adiciona automaticamente via `--packages`
    (`org.postgresql:postgresql`, `com.mysql:mysql-connector-j`) quando não há jars locais em
    `./spark/jars`. A imagem do cluster Spark já traz ambos em `/opt/spark/jars`.
