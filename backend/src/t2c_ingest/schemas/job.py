@@ -103,6 +103,16 @@ class JobDetailOut(JobOut):
     last_status: str | None = None
     last_finished_at: datetime | None = None
     avg_duration_seconds: float | None = None
+    # Last execution details (for the overview "última execução" card).
+    last_execution_started_at: datetime | None = None
+    last_execution_duration_seconds: int | None = None
+    last_execution_engine: str | None = None
+    last_execution_trigger: str | None = None
+    # Operational health metrics.
+    success_rate: int | None = None
+    recent_failures: int = 0
+    running_executions: int = 0
+    active_schedules: int = 0
 
 
 class JobCodeOut(BaseModel):

@@ -130,8 +130,13 @@ login no t2c_data e reutilize o token.
 
 Clique no nome de um job (ou em **Ver detalhes**) para abrir `/jobs/{id}`, com abas:
 
-- **Visão geral** — tipo, engine, script, conexões origem/destino, parâmetros padrão,
-  timeout, retry, criador, última execução, último status e tempo médio.
+- **Visão geral** — painel executivo em cards: **Resumo** (badges de tipo/engine/status, tags e
+  script com copiar), **métricas** (total, último status, tempo médio de sucesso arredondado,
+  última execução), **Última execução** (com atalho para o detalhe), **Saúde operacional**
+  (status, taxa de sucesso, falhas recentes 7d, execuções em andamento, schedules ativos, com
+  semáforo Boa/Atenção/Crítica), **Conexões** origem/destino (host:porta/database, teste e
+  ações), **Configuração principal**, **Parâmetros e argumentos** (bloco de comando + “Ver
+  estruturado”) e **Ações rápidas** (executar, ver execuções, abrir código, editar, agendar).
 - **Execuções** — apenas as execuções daquele job, com filtros (status, data inicial/final,
   usuário, busca na mensagem) e paginação de 25. Clique numa execução para abrir o detalhe.
 - **Código** — **editor estilo VS Code** (Monaco): tema escuro, numeração de linhas,

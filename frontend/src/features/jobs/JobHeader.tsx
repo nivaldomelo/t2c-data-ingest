@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { Pencil, Play, Trash2 } from "lucide-react";
 
 import { PrimaryButton, SecondaryButton, StatusBadge } from "@/components/ui";
+import { TagBadges } from "@/components/ui/TagBadges";
 import type { JobDetail } from "@/features/jobs/types";
 import { JOB_TYPE_LABEL, fmtDate } from "@/features/jobs/types";
 
@@ -41,18 +42,19 @@ export function JobHeader({
             <StatusBadge status={job.is_active ? "active" : "inactive"} />
           </div>
           {job.description && <p className="mt-1 text-sm text-gray-500">{job.description}</p>}
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="rounded-md bg-gray-100 px-2 py-0.5 font-medium text-gray-600">
-                {JOB_TYPE_LABEL[job.type] ?? job.type}
-              </span>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+              {JOB_TYPE_LABEL[job.type] ?? job.type}
             </span>
-            {job.engine && <span>engine: <span className="font-mono text-gray-700">{job.engine}</span></span>}
-            <span className="truncate font-mono">{job.script_path ?? "—"}</span>
+            {job.engine && <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700">{job.engine}</span>}
+            {(job.tags ?? []).length > 0 && <TagBadges tags={job.tags ?? []} max={8} />}
           </div>
-          <div className="mt-1 flex flex-wrap gap-x-4 text-xs text-gray-400">
+          {job.script_path && (
+            <p className="mt-2 break-all font-mono text-xs text-gray-400">{job.script_path}</p>
+          )}
+          <div className="mt-2 flex flex-wrap gap-x-1 text-xs text-gray-400">
             <span>Criado em {fmtDate(job.created_at)}{job.created_by ? ` por ${job.created_by}` : ""}</span>
-            <span>Atualizado em {fmtDate(job.updated_at)}</span>
+            <span>· Atualizado em {fmtDate(job.updated_at)}</span>
           </div>
         </div>
 

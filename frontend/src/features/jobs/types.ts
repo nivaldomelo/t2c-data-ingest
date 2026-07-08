@@ -38,6 +38,14 @@ export interface JobDetail {
   last_status: string | null;
   last_finished_at: string | null;
   avg_duration_seconds: number | null;
+  last_execution_started_at: string | null;
+  last_execution_duration_seconds: number | null;
+  last_execution_engine: string | null;
+  last_execution_trigger: string | null;
+  success_rate: number | null;
+  recent_failures: number;
+  running_executions: number;
+  active_schedules: number;
 }
 
 export interface JobConnectionInfo {
@@ -77,12 +85,53 @@ export const JOB_TYPE_LABEL: Record<string, string> = {
   spark_submit: "Spark · Submit",
 };
 
+// Friendly duration: 0,5s · 10s · 10,2s · 1min 20s · 1h 03min
 export function fmtDuration(s: number | null | undefined): string {
   if (s == null) return "—";
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m ${s % 60}s`;
+  if (s < 60) {
+    const r = Math.round(s * 10) / 10;
+    return `${Number.isInteger(r) ? r : r.toString().replace(".", ",")}s`;
+  }
+  if (s < 3600) {
+    const m = Math.floor(s / 60);
+    const sec = Math.round(s % 60);
+    return sec ? `${m}min ${String(sec).padStart(2, "0")}s` : `${m}min`;
+  }
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  return `${h}h ${String(m).padStart(2, "0")}min`;
 }
 
 export function fmtDate(t: string | null | undefined): string {
   return t ? new Date(t).toLocaleString("pt-BR") : "—";
+}
+
+// Parse ["--flag","value",...] into a raw string, backslash-wrapped lines and key/value pairs.
+export function parseJobArguments(args: unknown[] | null | undefined): {
+  raw: string;
+  lines: string[];
+  pairs: { key: string; value: string }[];
+} {
+  const tokens = (args ?? []).map(String);
+  const raw = tokens.join(" ");
+  const pairs: { key: string; value: string }[] = [];
+  const lines: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.startsWith("--")) {
+      const key = t.replace(/^--/, "");
+      const next = tokens[i + 1];
+      if (next && !next.startsWith("--")) {
+        pairs.push({ key, value: next });
+        lines.push(`${t} ${next}`);
+        i++;
+      } else {
+        pairs.push({ key, value: "true" });
+        lines.push(t);
+      }
+    } else {
+      lines.push(t);
+    }
+  }
+  return { raw, lines, pairs };
 }

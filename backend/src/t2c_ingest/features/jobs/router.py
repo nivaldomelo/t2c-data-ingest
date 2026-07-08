@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -267,9 +267,8 @@ def get_job(
     detail.source_connection_name = detail.source_connection.name if detail.source_connection else None
     detail.target_connection_name = detail.target_connection.name if detail.target_connection else None
 
-    detail.executions_total = (
-        db.scalar(select(func.count(Execution.id)).where(Execution.job_id == job_id)) or 0
-    )
+    total = db.scalar(select(func.count(Execution.id)).where(Execution.job_id == job_id)) or 0
+    detail.executions_total = total
     last = db.scalar(
         select(Execution).where(Execution.job_id == job_id).order_by(Execution.id.desc()).limit(1)
     )
@@ -277,12 +276,44 @@ def get_job(
         detail.last_execution_id = last.id
         detail.last_status = last.status
         detail.last_finished_at = last.finished_at
+        detail.last_execution_started_at = last.started_at
+        detail.last_execution_duration_seconds = last.duration_seconds
+        detail.last_execution_engine = last.engine
+        detail.last_execution_trigger = last.trigger_type
     avg = db.scalar(
         select(func.avg(Execution.duration_seconds)).where(
             Execution.job_id == job_id, Execution.status == "success"
         )
     )
     detail.avg_duration_seconds = float(avg) if avg is not None else None
+
+    # Operational health metrics.
+    if total:
+        success = db.scalar(
+            select(func.count(Execution.id)).where(
+                Execution.job_id == job_id, Execution.status == "success"
+            )
+        ) or 0
+        detail.success_rate = round(success * 100 / total)
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    detail.recent_failures = db.scalar(
+        select(func.count(Execution.id)).where(
+            Execution.job_id == job_id,
+            Execution.status.in_(("failed", "timeout")),
+            Execution.created_at >= since,
+        )
+    ) or 0
+    detail.running_executions = db.scalar(
+        select(func.count(Execution.id)).where(
+            Execution.job_id == job_id, Execution.status.in_(("queued", "running"))
+        )
+    ) or 0
+    detail.active_schedules = db.scalar(
+        select(func.count(JobSchedule.id)).where(
+            JobSchedule.job_id == job_id, JobSchedule.active.is_(True)
+        )
+    ) or 0
+
     detail.tags = [TagLite.model_validate(t) for t in tags_for_jobs(db, [job.id]).get(job.id, [])]
     return detail
 

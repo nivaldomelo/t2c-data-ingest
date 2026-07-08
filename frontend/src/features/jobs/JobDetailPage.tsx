@@ -155,7 +155,17 @@ export default function JobDetailPage() {
         </nav>
       </div>
 
-      {tab === "overview" && <JobOverviewTab job={job} />}
+      {tab === "overview" && (
+        <JobOverviewTab
+          job={job}
+          canRun={canRun}
+          running={run.isPending}
+          onRun={() => run.mutate()}
+          onEdit={() => setEditOpen(true)}
+          onOpenCode={() => setWorkspaceOpen(true)}
+          onGoTab={setTab}
+        />
+      )}
       {tab === "executions" && <JobExecutionsTab jobId={jobId} canRun={canRun} />}
       {tab === "schedules" && <JobSchedulesTab jobId={jobId} />}
       {tab === "settings" && (
