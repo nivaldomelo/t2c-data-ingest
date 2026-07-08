@@ -276,6 +276,10 @@ Uso futuro: jobs e pipelines poderão referenciar um registro (campo opcional
 `ingestion_control_id` já disponível no job) para obter nome da tabela, origem/destino, tipo de
 ingestão, colunas de watermark/chave, dados sensíveis e status — sem hardcode no script.
 
+Já existe um **job Spark dirigido pela tabela de controle** (PostgreSQL → MySQL) que lê esses
+parâmetros e faz carga FULL/INCREMENTAL com staging + upsert, atualizando watermark/status —
+ver [docs/job-postgres-to-mysql-controlled.md](docs/job-postgres-to-mysql-controlled.md).
+
 Endpoints: `GET/POST /api/v1/ingestion-control`, `GET/PUT/DELETE /api/v1/ingestion-control/{id}`,
 `POST /api/v1/ingestion-control/{id}/{activate,deactivate}`, `GET /api/v1/ingestion-control/summary`.
 Permissões: `ingest:control:read` (todos os perfis), `:write` (admin, editor), `:delete`
