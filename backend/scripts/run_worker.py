@@ -213,6 +213,31 @@ def _advance_pipelines() -> None:
         print(f"[worker] pipeline advance error: {exc}")
 
 
+def _process_library_actions() -> bool:
+    """Claim and run one queued cluster-library action (pip install/uninstall/reinstall)."""
+    try:
+        from t2c_ingest.features.cluster_libraries.service import run_action
+        from t2c_ingest.models.cluster_library import ClusterLibraryAction
+
+        with SessionLocal() as db:
+            action = db.scalar(
+                select(ClusterLibraryAction)
+                .where(ClusterLibraryAction.status == "queued")
+                .order_by(ClusterLibraryAction.id)
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
+            if action is None:
+                return False
+            print(f"[worker] library action {action.id}: {action.action} {action.package_spec}")
+            run_action(db, action)
+            print(f"[worker] library action {action.id} -> {action.status}")
+            return True
+    except Exception as exc:  # noqa: BLE001 - never let a library action kill the worker loop
+        print(f"[worker] library action error: {exc}")
+        return False
+
+
 def main() -> None:
     poll = settings.worker_poll_interval_seconds
     print(f"[worker] started; polling every {poll}s; spark master={settings.spark_master_url}")
@@ -227,6 +252,9 @@ def main() -> None:
                 print(f"[worker] execution {execution.id} -> {execution.status}")
         # Progress in-flight pipelines (release ready steps, finalize) every tick.
         _advance_pipelines()
+        # Process one queued library install/uninstall per tick.
+        if _process_library_actions():
+            ran = True
         if not ran:
             time.sleep(poll)
 

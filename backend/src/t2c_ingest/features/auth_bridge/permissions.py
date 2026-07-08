@@ -46,6 +46,11 @@ INGEST_PIPELINES_WRITE = "ingest:pipelines:write"
 INGEST_PIPELINES_DELETE = "ingest:pipelines:delete"
 INGEST_PIPELINES_RUN = "ingest:pipelines:run"
 INGEST_PIPELINES_BUILDER = "ingest:pipelines:builder"
+# Cluster libraries (managed pip packages).
+INGEST_LIBRARIES_READ = "ingest:libraries:read"
+INGEST_LIBRARIES_INSTALL = "ingest:libraries:install"
+INGEST_LIBRARIES_UNINSTALL = "ingest:libraries:uninstall"
+INGEST_LIBRARIES_MANAGE = "ingest:libraries:manage"
 # Tags (job organization/search).
 INGEST_TAGS_READ = "ingest:tags:read"
 INGEST_TAGS_WRITE = "ingest:tags:write"
@@ -91,6 +96,10 @@ ALL_PERMISSIONS = {
     INGEST_PIPELINES_DELETE,
     INGEST_PIPELINES_RUN,
     INGEST_PIPELINES_BUILDER,
+    INGEST_LIBRARIES_READ,
+    INGEST_LIBRARIES_INSTALL,
+    INGEST_LIBRARIES_UNINSTALL,
+    INGEST_LIBRARIES_MANAGE,
     INGEST_TAGS_READ,
     INGEST_TAGS_WRITE,
     INGEST_TAGS_DELETE,
@@ -140,6 +149,10 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_DELETE,
         INGEST_PIPELINES_RUN,
         INGEST_PIPELINES_BUILDER,
+        INGEST_LIBRARIES_READ,
+        INGEST_LIBRARIES_INSTALL,
+        INGEST_LIBRARIES_UNINSTALL,
+        INGEST_LIBRARIES_MANAGE,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_TAGS_DELETE,
@@ -174,6 +187,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_WRITE,
         INGEST_PIPELINES_RUN,
         INGEST_PIPELINES_BUILDER,
+        INGEST_LIBRARIES_READ,
+        INGEST_LIBRARIES_INSTALL,
+        INGEST_LIBRARIES_UNINSTALL,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_JOBS_TAGS_WRITE,
@@ -186,6 +202,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONTROL_READ,
         INGEST_VARIABLES_READ,
         INGEST_PIPELINES_READ,
+        INGEST_LIBRARIES_READ,
         INGEST_TAGS_READ,
     },
     "stewardship": {
@@ -197,6 +214,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONTROL_READ,
         INGEST_VARIABLES_READ,
         INGEST_PIPELINES_READ,
+        INGEST_LIBRARIES_READ,
         INGEST_TAGS_READ,
     },
     "data_owner": {
@@ -212,6 +230,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_VARIABLES_READ,
         INGEST_PIPELINES_READ,
         INGEST_PIPELINES_RUN,
+        INGEST_LIBRARIES_READ,
         INGEST_TAGS_READ,
     },
 }

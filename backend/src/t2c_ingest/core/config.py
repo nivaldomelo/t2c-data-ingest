@@ -116,6 +116,15 @@ class Settings(BaseSettings):
         default="/opt/t2c/backups/job-code", validation_alias="JOB_CODE_BACKUP_DIR"
     )
 
+    # ── Cluster libraries (managed pip installs) ──
+    # Python interpreter used to run pip. Defaults to the worker's own interpreter (empty ->
+    # sys.executable at runtime). Point this at a venv (e.g. /opt/t2c/venvs/ingest/bin/python)
+    # to isolate installs later without code changes.
+    library_pip_python: str = Field(default="", validation_alias="LIBRARY_PIP_PYTHON")
+    # Install into the per-user site (~/.local) — required when the worker runs as non-root.
+    library_pip_user: bool = Field(default=True, validation_alias="LIBRARY_PIP_USER")
+    library_install_timeout: int = Field(default=600, validation_alias="LIBRARY_INSTALL_TIMEOUT")
+
     @property
     def job_code_editable_extensions_set(self) -> set[str]:
         return {e.strip().lower() for e in self.job_code_editable_extensions.split(",") if e.strip()}

@@ -469,6 +469,55 @@ Derivadas dos perfis existentes do t2c_data, sem conceder privilégio administra
 Permissões de conexões: `ingest:connections:read`, `ingest:connections:write`,
 `ingest:connections:test`, `ingest:connections:delete` (delete é exclusivo de admin).
 
+## Bibliotecas (pacotes Python do cluster)
+
+A tela **Bibliotecas** (`/libraries`) permite instalar, listar, reinstalar e remover pacotes
+Python (PyPI) usados por jobs Spark/Python — de forma **controlada**, sem executar comandos
+shell livres.
+
+**Como funciona.** O usuário informa apenas **nome** e (opcional) **versão**; o backend valida,
+monta o comando `pip` com segurança e enfileira uma **ação** (`cluster_library_actions`). O
+worker do T2C Data Ingest processa a fila (`queued → running → success/failed`), executando
+`pip` como **lista de argumentos** (nunca shell), com timeout, e captura stdout/stderr nos logs
+da ação. Cada biblioteca vive em `cluster_libraries` com status
+(`pending/queued/installing/installed/failed/removed`).
+
+- **Instalar:** botão *Instalar biblioteca* → nome + versão (ou especificação avançada como
+  `pandas>=2.2.0`). Validação ao vivo mostra o spec normalizado.
+- **Detalhe (drawer):** abas **Resumo**, **Histórico**, **Logs** (terminal escuro) e **Como
+  usar** (exemplos Python e Spark). Ações **Reinstalar** e **Remover**.
+- **Endpoints:** `GET /libraries`, `GET /libraries/summary`, `GET /libraries/{id}`,
+  `POST /libraries/install`, `POST /libraries/{id}/reinstall`, `POST /libraries/{id}/uninstall`,
+  `GET /libraries/{id}/actions`, `GET /library-actions/{id}`, `GET /library-actions/{id}/logs`,
+  `POST /libraries/validate-package`.
+
+**Segurança.** Só PyPI. O nome é validado por whitelist e são **bloqueados** caracteres/sequências
+perigosas (`;`, `&&`, `|`, `$`, crase, `..`, `://`, espaços) e instalação por **URL, Git ou
+caminho local**. `pip` é sempre invocado via lista de argumentos com timeout — nunca `sh -c`.
+Nenhum secret é exposto. Toda ação gera auditoria
+(`CLUSTER_LIBRARY_INSTALL_REQUESTED/STARTED/SUCCEEDED/FAILED`, etc.).
+
+**Onde instala (dev local).** A instalação ocorre no container **`t2c_data_ingest_worker`** — o
+mesmo que roda os jobs Python e faz `spark-submit` (driver) — no *user site* (`pip --user`, pois
+o processo roda como usuário não-root). Configurável por env: `LIBRARY_PIP_PYTHON` (apontar para
+um virtualenv, ex. `/opt/t2c/venvs/ingest/bin/python`), `LIBRARY_PIP_USER`, `LIBRARY_INSTALL_TIMEOUT`.
+
+**Cuidados / limites (v1):**
+- **Executors Spark** (containers `spark-worker`) **não** recebem as libs automaticamente — apenas
+  o driver/worker. Libs usadas dentro de UDFs nos executors podem exigir recriar a imagem dos
+  workers Spark. O driver/`spark-submit` usa o Python do worker (que enxerga o `--user site`).
+- As libs vivem no filesystem do container do worker; **recriar a imagem** (`docker compose build`)
+  zera o `~/.local`. Para persistência/produção, aponte `LIBRARY_PIP_PYTHON` para um virtualenv em
+  volume dedicado.
+- Libs com **dependências nativas** complexas podem exigir pacotes de sistema (rebuild da imagem).
+
+Permissões: `ingest:libraries:read` (todos os papéis), `ingest:libraries:install` /
+`ingest:libraries:uninstall` (admin, editor) e `ingest:libraries:manage` (admin). Sem permissão de
+instalação, o botão *Instalar biblioteca* não aparece; sem permissão de remoção, *Remover* não aparece.
+
+Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
+validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
+
 ## Migração do Airflow (gradual)
 
 O módulo **Airflow legado** nasce como **inventário**, não migração automática. As DAGs de
