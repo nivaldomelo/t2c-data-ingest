@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Pencil, Play, Trash2 } from "lucide-react";
 
 import { PrimaryButton, SecondaryButton, StatusBadge } from "@/components/ui";
 import type { JobDetail } from "@/features/jobs/types";
@@ -8,13 +8,21 @@ import { JOB_TYPE_LABEL, fmtDate } from "@/features/jobs/types";
 export function JobHeader({
   job,
   canRun,
+  canEdit,
+  canDelete,
   running,
   onRun,
+  onEdit,
+  onDelete,
 }: {
   job: JobDetail;
   canRun: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   running: boolean;
   onRun: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const navigate = useNavigate();
   return (
@@ -48,8 +56,19 @@ export function JobHeader({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <SecondaryButton onClick={() => navigate("/jobs")}>Voltar</SecondaryButton>
+          {canEdit && (
+            <SecondaryButton icon={<Pencil size={15} />} onClick={onEdit}>Editar</SecondaryButton>
+          )}
+          {canDelete && (
+            <button
+              onClick={onDelete}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+            >
+              <Trash2 size={15} /> Excluir
+            </button>
+          )}
           {canRun && (
             <PrimaryButton icon={<Play size={16} />} loading={running} disabled={!job.is_active} onClick={onRun}>
               Executar job

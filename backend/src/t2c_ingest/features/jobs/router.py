@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -11,6 +11,7 @@ from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
 from t2c_ingest.features.auth_bridge import permissions as perms
 from t2c_ingest.features.connections.repository import get_connection_by_ref
+from t2c_ingest.features.jobs.archive_service import ArchiveError, archive_job_code
 from t2c_ingest.features.jobs.code_service import (
     CodeError,
     assert_within_allowed,
@@ -21,6 +22,7 @@ from t2c_ingest.features.jobs.code_service import (
     read_job_code,
     write_job_code,
 )
+from t2c_ingest.models.pipeline import PipelineDefinition, PipelineStep
 from t2c_ingest.features.tags.service import job_ids_with_tags, sync_job_tags, tags_for_jobs
 from t2c_ingest.models.connection import Connection
 from t2c_ingest.models.execution import Execution
@@ -36,6 +38,8 @@ from t2c_ingest.schemas.job import (
     JobCodeOut,
     JobCodeSaveRequest,
     JobCreate,
+    JobDeleteRequest,
+    JobDeleteResult,
     JobDetailOut,
     JobOut,
     JobRunRequest,
@@ -64,11 +68,15 @@ def list_jobs(
     type: str | None = None,
     is_active: bool | None = None,
     tags: str | None = Query(None, description="Slugs/nomes separados por vírgula"),
+    include_deleted: bool = Query(False, description="Inclui jobs excluídos (arquivados)"),
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
 ) -> PageOut[JobOut]:
     stmt = select(JobDefinition)
     count_stmt = select(func.count(JobDefinition.id))
+    if not include_deleted:
+        stmt = stmt.where(JobDefinition.deleted_at.is_(None))
+        count_stmt = count_stmt.where(JobDefinition.deleted_at.is_(None))
     if type:
         stmt = stmt.where(JobDefinition.type == type)
         count_stmt = count_stmt.where(JobDefinition.type == type)
@@ -98,7 +106,7 @@ def search_jobs(
     _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
 ) -> list[JobSearchOut]:
     """Autocomplete for the pipeline builder command palette (matches name/description/tags)."""
-    stmt = select(JobDefinition)
+    stmt = select(JobDefinition).where(JobDefinition.deleted_at.is_(None))
     if search:
         like = f"%{search.strip()}%"
         # Jobs whose name/description match, OR that carry a tag matching the term.
@@ -174,6 +182,49 @@ def _arg_connection_name(job: JobDefinition, flag: str) -> str | None:
     return None
 
 
+def _jsonable(d: dict) -> dict:
+    """Coerce a dict of model values to JSON-safe primitives for the audit trail."""
+    out: dict = {}
+    for k, v in d.items():
+        out[k] = v if (v is None or isinstance(v, (str, int, float, bool, list, dict))) else str(v)
+    return out
+
+
+# Execution statuses that mean the job is still active (cannot be deleted).
+_RUNNING_STATES = ("queued", "running")
+
+
+def _delete_blockers(db: Session, job_id: int) -> str | None:
+    """Return a human message if the job has an active dependency blocking deletion, else None."""
+    running = db.scalar(
+        select(func.count(Execution.id)).where(
+            Execution.job_id == job_id, Execution.status.in_(_RUNNING_STATES)
+        )
+    )
+    if running:
+        return "Não é possível excluir um job em execução."
+    active_pipelines = db.scalar(
+        select(func.count(PipelineStep.id))
+        .join(PipelineDefinition, PipelineDefinition.id == PipelineStep.pipeline_id)
+        .where(
+            PipelineStep.job_id == job_id,
+            PipelineStep.active.is_(True),
+            PipelineDefinition.is_active.is_(True),
+        )
+    )
+    if active_pipelines:
+        return ("Este job está vinculado a pipelines ativos. Remova o job dos pipelines ou "
+                "inative os pipelines antes de excluir.")
+    active_schedules = db.scalar(
+        select(func.count(JobSchedule.id)).where(
+            JobSchedule.job_id == job_id, JobSchedule.active.is_(True)
+        )
+    )
+    if active_schedules:
+        return "Este job possui schedules ativos. Desative os schedules antes de excluir."
+    return None
+
+
 @router.get("/{job_id}", response_model=JobDetailOut)
 def get_job(
     job_id: int,
@@ -240,6 +291,7 @@ def put_job_tags(
 
 
 @router.patch("/{job_id}", response_model=JobOut)
+@router.put("/{job_id}", response_model=JobOut)
 def update_job(
     job_id: int,
     payload: JobUpdate,
@@ -249,13 +301,93 @@ def update_job(
     job = db.get(JobDefinition, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    if job.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este job foi excluído e não pode ser editado.")
+    changes = payload.model_dump(exclude_unset=True)
+    # A script_path (when provided) must stay inside an allowed (git-tracked) directory.
+    new_path = changes.get("script_path")
+    if new_path is not None and str(new_path).strip():
+        try:
+            assert_within_allowed(str(new_path))
+        except CodeError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    before = {k: getattr(job, k) for k in changes}
+    for key, value in changes.items():
         setattr(job, key, value)
     job.updated_by = user.email
-    record_audit(db, action="ingest.job.updated", user=user, entity_type="job", entity_id=job.id)
+    record_audit(db, action="JOB_UPDATED", user=user, entity_type="job", entity_id=job.id,
+                 detail={"before": _jsonable(before), "after": _jsonable(changes)})
     db.commit()
     db.refresh(job)
     return JobOut.model_validate(job)
+
+
+@router.delete("/{job_id}", response_model=JobDeleteResult)
+def delete_job(
+    job_id: int,
+    payload: JobDeleteRequest | None = None,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_JOBS_DELETE)),
+) -> JobDeleteResult:
+    """Soft-delete a job: archive its code first (never hard-delete), then mark it deleted.
+
+    Blocks if the job is running or still referenced by active pipelines/schedules.
+    """
+    job = db.get(JobDefinition, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if job.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este job já foi excluído.")
+
+    reason = payload.reason if payload else None
+    record_audit(db, action="JOB_DELETE_REQUESTED", user=user, entity_type="job", entity_id=job.id,
+                 detail={"job_name": job.name, "reason": reason})
+
+    # 1) Dependency checks — block (don't archive) if the job is still active somewhere.
+    blocker = _delete_blockers(db, job_id)
+    if blocker:
+        record_audit(db, action="JOB_DELETE_BLOCKED", user=user, entity_type="job", entity_id=job.id,
+                     detail={"job_name": job.name, "reason": blocker})
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=blocker)
+
+    # 2) Archive the code. On failure we abort the delete (nothing is lost).
+    now = datetime.now(timezone.utc)
+    try:
+        archived = archive_job_code(job, deleted_by=user.email, now=now)
+    except ArchiveError as exc:
+        record_audit(db, action="JOB_DELETE_BLOCKED", user=user, entity_type="job", entity_id=job.id,
+                     detail={"job_name": job.name, "reason": f"archive_failed: {exc.message}"})
+        db.commit()
+        raise HTTPException(status_code=exc.status, detail=f"Falha ao arquivar o código do job: {exc.message}") from exc
+
+    archived_path = archived["archived_code_path"]
+    record_audit(db, action="JOB_CODE_ARCHIVED", user=user, entity_type="job", entity_id=job.id,
+                 detail={"job_name": job.name, "archived_code_path": archived_path,
+                         "file_count": archived.get("file_count"), "original_removed": archived.get("original_removed")})
+    db.add(JobCodeVersion(
+        job_id=job.id, script_path=job.script_path or "", action="archived_on_job_delete",
+        file_path=archived.get("original_workspace_path"), backup_path=archived["archived_workspace_path"],
+        changed_by=user.email, size_before_bytes=None,
+        change_summary=f"Código arquivado antes da exclusão lógica ({archived.get('file_count')} arquivos).",
+    ))
+
+    # 3) Soft delete.
+    job.deleted_at = now
+    job.deleted_by = user.email
+    job.delete_reason = reason
+    job.is_active = False
+    job.archived_code_path = archived_path
+    job.updated_by = user.email
+    record_audit(db, action="JOB_DELETED", user=user, entity_type="job", entity_id=job.id,
+                 detail={"job_name": job.name, "archived_code_path": archived_path, "reason": reason})
+    db.commit()
+    return JobDeleteResult(
+        success=True,
+        message="Job excluído com sucesso. Código arquivado.",
+        job_id=job.id,
+        archived_code_path=archived_path,
+    )
 
 
 @router.post("/{job_id}/run", response_model=ExecutionOut, status_code=status.HTTP_202_ACCEPTED)
@@ -268,6 +400,8 @@ def run_job(
     job = db.get(JobDefinition, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if job.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este job foi excluído e não pode ser executado.")
     execution = enqueue_job_execution(
         db, job=job, user=user, parameters=(payload.parameters if payload else None)
     )

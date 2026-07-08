@@ -193,15 +193,18 @@ Kubernetes) — a origem da verdade é sempre o Git.
 
 ### Workspace de código (estilo VS Code)
 
-Pelo botão **Abrir workspace** (aba **Código**) abre-se um modal grande (95vw × 90vh) com a
-experiência de um editor multi-arquivo:
+Na tela de **Detalhes do Job**, clicar na aba **Código** abre **diretamente** o workspace em um
+modal grande (95vw × 90vh) — sem página intermediária. O arquivo principal (`script_path`) é
+aberto automaticamente. Ao fechar, volta-se aos detalhes do job. É a mesma experiência de editor
+multi-arquivo:
 
 - **Explorador de arquivos** à esquerda: árvore do workspace do job com pastas expansíveis,
   criar arquivo/pasta, renomear e excluir (ações no hover). O workspace é **a pasta do script
   versionado do job** (em `spark/jobs` ou `python_jobs`); jobs sem script válido não abrem
   workspace (mensagem orientando a definir o caminho).
 - **Abas** de arquivos abertos com indicador de não salvo e fechar por aba; **Ctrl/Cmd+S** salva
-  a aba ativa; barra de status com job, arquivo, tamanho e última modificação.
+  a aba ativa; **Salvar todos** (barra superior) e **Copiar código**; barra de status com job,
+  arquivo, tamanho e última modificação.
 - **Endpoints:** `GET workspace/tree`, `GET/PUT/POST/DELETE workspace/file`,
   `POST/DELETE workspace/folder`, `PUT workspace/rename` (prefixo `/api/v1/jobs/{id}`).
 - **Permissões:** `code:read` (ver/abrir), `code:write` (salvar), `code:create` (novo
@@ -221,6 +224,40 @@ padrões de credencial, mas a responsabilidade final é do autor.
 
 Permissões: `ingest:jobs:code:read` (admin, editor, data_owner, stewardship) e
 `ingest:jobs:code:write` (admin, editor). Viewer não acessa o código.
+
+### Editar e excluir job (soft delete + arquivamento de código)
+
+O header dos **Detalhes do Job** traz **Executar**, **Editar**, **Excluir** e **Voltar**
+(cada botão só aparece com a permissão correspondente).
+
+**Editar** (`PUT`/`PATCH /api/v1/jobs/{id}`, permissão `ingest:write`) abre um modal com nome,
+descrição, tipo, engine, `script_path`, conexões origem/destino, parâmetros padrão (JSON),
+timeout, retry, tags e ativo/inativo. Valida nome obrigatório, tipo válido e **rejeita
+`script_path` fora dos diretórios permitidos**; grava auditoria `JOB_UPDATED` e atualiza
+`updated_by`.
+
+**Excluir** (`DELETE /api/v1/jobs/{id}`, permissão `ingest:jobs:delete` — **admins** nesta
+versão) faz **soft delete** e **nunca apaga o código**:
+
+1. Verifica dependências ativas e **bloqueia** (HTTP 409) se o job estiver **em execução**,
+   vinculado a **pipelines ativos** ou com **schedules ativos** (mensagem explicativa).
+2. **Arquiva o código**: copia o workspace para
+   `JOB_ARCHIVE_DIR/deleted_jobs/{id}_{slug}_{timestampUTC}/` (padrão `/opt/t2c/jobs/archive`,
+   montado de `./archive`), com `workspace/`, `metadata.json` e `README_ARCHIVE.md`. A cópia é
+   **validada** antes de remover o original; se o arquivamento falhar, a exclusão é abortada
+   (nada é perdido).
+3. **Marca** `deleted_at`/`deleted_by`/`delete_reason`/`archived_code_path`, seta `is_active=false`
+   e remove o job da **listagem padrão** (use `?include_deleted=true` para incluí-los).
+4. Registra auditoria `JOB_DELETE_REQUESTED` → `JOB_CODE_ARCHIVED` → `JOB_DELETED` (ou
+   `JOB_DELETE_BLOCKED`) e uma linha em `job_code_versions` com `action=archived_on_job_delete`
+   (sem conteúdo dos arquivos).
+
+Acessar um job excluído mostra o aviso **"Este job foi excluído"** com o caminho do archive, a
+data e o responsável — sem permitir executar/editar/abrir workspace (todos retornam 409).
+
+Diretórios seguros permitidos (path traversal, caminhos absolutos e fora da allowlist são
+bloqueados): `/opt/t2c/spark/jobs`, `/opt/t2c/python_jobs`, `/opt/spark/jobs`, `/app/jobs`,
+`/opt/t2c/jobs/archive`.
 
 ## Conexões (bancos de dados)
 

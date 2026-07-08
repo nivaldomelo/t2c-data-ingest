@@ -22,6 +22,11 @@ export interface JobDetail {
   created_at: string;
   updated_at: string;
   tags: { id: number; name: string; slug: string; color: string | null }[];
+  // soft delete
+  deleted_at: string | null;
+  deleted_by: string | null;
+  delete_reason: string | null;
+  archived_code_path: string | null;
   // enriched
   source_connection_name: string | null;
   target_connection_name: string | null;

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -51,3 +53,9 @@ class JobDefinition(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by: Mapped[str | None] = mapped_column(String(255))
     updated_by: Mapped[str | None] = mapped_column(String(255))
+    # Soft delete: the job leaves the active listing but is never hard-deleted; its code is
+    # archived (see features/jobs/archive_service) and the path recorded here.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by: Mapped[str | None] = mapped_column(String(255))
+    delete_reason: Mapped[str | None] = mapped_column(Text)
+    archived_code_path: Mapped[str | None] = mapped_column(String(700))

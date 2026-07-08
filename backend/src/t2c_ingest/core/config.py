@@ -80,8 +80,13 @@ class Settings(BaseSettings):
     # Directories the job code viewer is allowed to read from (comma-separated). Any script
     # outside these (or path traversal) is rejected.
     allowed_script_dirs: str = Field(
-        default="/opt/t2c/spark/jobs,/opt/t2c/python_jobs,/opt/spark/jobs,/app/jobs",
+        default="/opt/t2c/spark/jobs,/opt/t2c/python_jobs,/opt/spark/jobs,/app/jobs,/opt/t2c/jobs/archive",
         validation_alias="ALLOWED_SCRIPT_DIRS",
+    )
+    # Where deleted jobs' code is archived before soft delete (inside the project, never
+    # hard-deleted). See features/jobs/archive_service.
+    job_archive_dir: str = Field(
+        default="/opt/t2c/jobs/archive", validation_alias="JOB_ARCHIVE_DIR"
     )
     # Versioned (git-tracked) roots where new jobs' code is provisioned, by engine. Every job's
     # code lives here so it is committed to GitHub and shipped by CI/CD (K8s) — there is no

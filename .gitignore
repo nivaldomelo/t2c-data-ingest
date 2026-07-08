@@ -29,6 +29,10 @@ spark/data/*
 # Job code backups (keep the folder, ignore contents)
 backups/*
 !backups/.gitkeep
+
+# Archived code of deleted jobs (keep the folder, ignore contents — persisted on a volume in prod)
+archive/*
+!archive/.gitkeep
 *.parquet
 *.log
 

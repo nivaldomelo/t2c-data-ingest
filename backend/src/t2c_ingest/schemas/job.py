@@ -70,6 +70,11 @@ class JobOut(JobBase):
     created_at: datetime
     updated_at: datetime
     tags: list[TagLite] = Field(default_factory=list)
+    # Soft-delete bookkeeping (null for active jobs).
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
+    delete_reason: str | None = None
+    archived_code_path: str | None = None
 
 
 class JobDetailOut(JobOut):
@@ -119,3 +124,16 @@ class JobSearchOut(BaseModel):
 
 class JobRunRequest(BaseModel):
     parameters: dict | None = None
+
+
+class JobDeleteRequest(BaseModel):
+    reason: str | None = None
+    # Reserved for a future admin "forced delete"; ignored (blocked) in this version.
+    force: bool = False
+
+
+class JobDeleteResult(BaseModel):
+    success: bool = True
+    message: str
+    job_id: int
+    archived_code_path: str | None = None

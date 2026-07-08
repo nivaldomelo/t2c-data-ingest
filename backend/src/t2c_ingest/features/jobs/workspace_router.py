@@ -33,6 +33,11 @@ def _job(db: Session, job_id: int) -> JobDefinition:
     job = db.get(JobDefinition, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if job.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este job foi excluído. O código foi arquivado e o workspace não está disponível.",
+        )
     return job
 
 
@@ -63,7 +68,7 @@ def workspace_tree(
 ) -> WorkspaceTree:
     job = _job(db, job_id)
     root = _handle(lambda: ws.resolve_workspace(job))
-    record_audit(db, action="JOB_CODE_WORKSPACE_OPENED", user=user, entity_type="job", entity_id=job.id)
+    record_audit(db, action="JOB_WORKSPACE_OPENED", user=user, entity_type="job", entity_id=job.id)
     db.commit()
     main_rel = None
     if job.script_path:

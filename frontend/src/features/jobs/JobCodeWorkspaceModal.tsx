@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   FilePlus2,
   FileText,
   Folder,
@@ -14,6 +15,7 @@ import {
   Pencil,
   RefreshCw,
   Save,
+  SaveAll,
   ShieldAlert,
   Trash2,
   X,
@@ -234,9 +236,9 @@ function TreeItem({
 
 // ── main modal ──
 export function JobCodeWorkspaceModal({
-  jobId, open, onClose,
+  jobId, jobName, open, onClose,
 }: {
-  jobId: number; open: boolean; onClose: () => void;
+  jobId: number; jobName?: string; open: boolean; onClose: () => void;
 }) {
   const { can } = useAuth();
   const canWrite = can(PERM.write);
@@ -390,6 +392,40 @@ export function JobCodeWorkspaceModal({
     }
   }, [active, jobId, patch]);
 
+  const saveAll = useCallback(async () => {
+    const dirtyFiles = files.filter((f) => !f.readOnly && f.value !== f.base);
+    if (dirtyFiles.length === 0) return;
+    setSaving(true);
+    let ok = 0;
+    for (const f of dirtyFiles) {
+      try {
+        const saved = await api.put<WorkspaceFile>(`/api/v1/jobs/${jobId}/workspace/file`, {
+          path: f.path, content: f.value, expected_last_modified_at: f.mtime,
+        });
+        patch(f.path, { base: saved.content, value: saved.content, mtime: saved.last_modified_at, conflict: false });
+        ok += 1;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) patch(f.path, { conflict: true });
+      }
+    }
+    setSaving(false);
+    setToast(
+      ok === dirtyFiles.length
+        ? { kind: "ok", msg: `${ok} arquivo(s) salvo(s).` }
+        : { kind: "err", msg: `${ok}/${dirtyFiles.length} salvos — verifique conflitos.` }
+    );
+  }, [files, jobId, patch]);
+
+  const copyActive = useCallback(async () => {
+    if (!active) return;
+    try {
+      await navigator.clipboard.writeText(active.value);
+      setToast({ kind: "ok", msg: "Código copiado." });
+    } catch {
+      /* ignore */
+    }
+  }, [active]);
+
   const reloadActive = useCallback(async () => {
     if (!active) return;
     if (active.value !== active.base && !window.confirm("Descartar alterações e recarregar?")) return;
@@ -500,7 +536,9 @@ export function JobCodeWorkspaceModal({
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
             <Code2Icon />
-            <span className="text-sm font-semibold text-slate-100">Workspace de código</span>
+            <span className="text-sm font-semibold text-slate-100">
+              {jobName ? `Código · ${jobName}` : "Workspace de código"}
+            </span>
             {tree && <span className="truncate font-mono text-xs text-slate-500">{tree.workspace_path}</span>}
             {!canWrite && (
               <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-slate-400">
@@ -508,9 +546,24 @@ export function JobCodeWorkspaceModal({
               </span>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white">
-            <X size={18} />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {canWrite && (
+              <button
+                onClick={() => void saveAll()}
+                disabled={saving || !anyDirty}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                  anyDirty ? "bg-white/10 text-slate-200 hover:bg-white/20" : "cursor-not-allowed text-slate-600"
+                )}
+                title="Salvar todos os arquivos"
+              >
+                <SaveAll size={14} /> Salvar todos
+              </button>
+            )}
+            <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="flex min-h-0 flex-1">
@@ -603,6 +656,9 @@ export function JobCodeWorkspaceModal({
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  <button onClick={() => void copyActive()} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white">
+                    <Copy size={13} /> Copiar
+                  </button>
                   <button onClick={() => void reloadActive()} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white">
                     <RefreshCw size={13} /> Recarregar
                   </button>
