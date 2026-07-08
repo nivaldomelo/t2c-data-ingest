@@ -8,7 +8,13 @@ from t2c_ingest.models.base import Base  # noqa: F401
 from t2c_ingest.models.cluster import Cluster  # noqa: F401
 from t2c_ingest.models.connection import Connection  # noqa: F401
 from t2c_ingest.models.job import JobDefinition  # noqa: F401
-from t2c_ingest.models.pipeline import PipelineDefinition, PipelineStep  # noqa: F401
+from t2c_ingest.models.pipeline import (  # noqa: F401
+    PipelineDefinition,
+    PipelineExecution,
+    PipelineStep,
+    PipelineStepDependency,
+    PipelineStepExecution,
+)
 from t2c_ingest.models.execution import (  # noqa: F401
     Execution,
     ExecutionLog,
