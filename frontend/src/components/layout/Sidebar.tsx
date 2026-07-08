@@ -7,6 +7,7 @@ import {
   PlayCircle,
   Plug,
   Server,
+  Variable,
   Wind,
   Workflow,
   Zap,
@@ -17,6 +18,7 @@ import { cn } from "@/lib/cn";
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/connections", label: "Conexões", icon: Plug },
+  { to: "/variables", label: "Variáveis", icon: Variable },
   { to: "/ingestion-control", label: "Controle de Ingestão", icon: Database },
   { to: "/clusters", label: "Clusters", icon: Server },
   { to: "/jobs", label: "Jobs", icon: Boxes },
