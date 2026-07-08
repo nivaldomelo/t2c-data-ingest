@@ -34,6 +34,7 @@ from t2c_ingest.schemas.job import (
     JobDetailOut,
     JobOut,
     JobRunRequest,
+    JobSearchOut,
     JobUpdate,
 )
 from t2c_ingest.services.audit import record_audit
@@ -63,6 +64,34 @@ def list_jobs(
         stmt.order_by(JobDefinition.name).offset(params.offset).limit(params.limit)
     ).all()
     return PageOut.build([JobOut.model_validate(r) for r in rows], total, params)
+
+
+@router.get("/search", response_model=list[JobSearchOut])
+def search_jobs(
+    search: str | None = None,
+    job_type: str | None = None,
+    engine: str | None = None,
+    active: bool | None = None,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
+) -> list[JobSearchOut]:
+    """Autocomplete for the pipeline builder command palette."""
+    stmt = select(JobDefinition)
+    if search:
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(or_(JobDefinition.name.ilike(like), JobDefinition.description.ilike(like)))
+    if job_type:
+        stmt = stmt.where(JobDefinition.type == job_type)
+    if engine:
+        stmt = stmt.where(JobDefinition.engine == engine)
+    if active is not None:
+        stmt = stmt.where(JobDefinition.is_active == active)
+    rows = db.scalars(stmt.order_by(JobDefinition.name).limit(limit)).all()
+    return [
+        JobSearchOut(id=j.id, name=j.name, description=j.description, job_type=j.type, engine=j.engine, active=j.is_active)
+        for j in rows
+    ]
 
 
 @router.post("", response_model=JobOut, status_code=status.HTTP_201_CREATED)

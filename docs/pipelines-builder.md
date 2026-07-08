@@ -21,12 +21,18 @@ ordem topológica, com o resultado de cada job liberando (ou pulando) os próxim
 - **Header**: nome, status, nº de jobs/conexões, última execução, indicador **"não salvo"** e
   botões **Validar / Organizar / Salvar / Executar / Fechar**. Fechar com alterações pendentes
   pede confirmação.
-- **Sidebar de jobs**: busca + adicionar ao canvas.
-- **Canvas**: minimap, controles (zoom/fit), pan, arrastar nós. Criar conexões de 3 formas:
+- **Adicionar job**: sem lista lateral — clique em **Adicionar job** (ou `Ctrl+K` / tecla `A`)
+  para abrir uma **command palette** (busca/autocomplete via `GET /jobs/search`); digite parte
+  do nome, navegue com ↑↓ e Enter, e o job entra no canvas. Quando o pipeline está vazio, um
+  **empty state** central oferece o botão **Adicionar job**.
+- **Canvas** (ocupa quase toda a tela): minimap, controles (zoom/fit), pan, arrastar nós.
+  Criar conexões de 3 formas:
   1. **arrastar** da bolinha de saída (laranja, à direita) para a entrada de outro nó;
-  2. **+ no nó** (aparece no hover) → escolhe o próximo job, que é adicionado à direita e já
-     conectado;
-  3. selecionar e editar no **painel de propriedades**.
+  2. **arrastar a seta para uma área vazia** → abre a busca e o job escolhido é criado no
+     ponto solto e já conectado ao job de origem;
+  3. **menu rápido no nó** (painel): *Próximo job* (abre a busca e conecta), *Detalhes*,
+     *Código*, *Remover*.
+  Ao conectar, o builder bloqueia auto-conexão, conexão duplicada e **ciclo** (com aviso).
 - **Organizar layout**: reorganiza os nós em camadas da esquerda para a direita (dagre),
   facilitando pipelines grandes.
 - **Painel de propriedades** (direita): edita step (nome, run_if, retry, timeout, ativo) ou a

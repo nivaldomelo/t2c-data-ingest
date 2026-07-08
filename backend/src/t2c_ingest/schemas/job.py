@@ -103,5 +103,16 @@ class JobCodeSaveRequest(BaseModel):
     change_summary: str | None = None
 
 
+class JobSearchOut(BaseModel):
+    """Light job representation for the pipeline builder command palette."""
+
+    id: int
+    name: str
+    description: str | None = None
+    job_type: str
+    engine: str | None = None
+    active: bool
+
+
 class JobRunRequest(BaseModel):
     parameters: dict | None = None
