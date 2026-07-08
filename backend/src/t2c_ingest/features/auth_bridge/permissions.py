@@ -29,6 +29,12 @@ INGEST_SCHEDULES_RUN = "ingest:schedules:run"
 INGEST_CONTROL_READ = "ingest:control:read"
 INGEST_CONTROL_WRITE = "ingest:control:write"
 INGEST_CONTROL_DELETE = "ingest:control:delete"
+# Reusable variables (parameters for jobs/pipelines).
+INGEST_VARIABLES_READ = "ingest:variables:read"
+INGEST_VARIABLES_WRITE = "ingest:variables:write"
+INGEST_VARIABLES_DELETE = "ingest:variables:delete"
+INGEST_VARIABLES_SECRET_READ = "ingest:variables:secret:read"
+INGEST_VARIABLES_SECRET_WRITE = "ingest:variables:secret:write"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -55,6 +61,11 @@ ALL_PERMISSIONS = {
     INGEST_CONTROL_READ,
     INGEST_CONTROL_WRITE,
     INGEST_CONTROL_DELETE,
+    INGEST_VARIABLES_READ,
+    INGEST_VARIABLES_WRITE,
+    INGEST_VARIABLES_DELETE,
+    INGEST_VARIABLES_SECRET_READ,
+    INGEST_VARIABLES_SECRET_WRITE,
 }
 
 # Mapping from t2c_data role -> ingest permissions.
@@ -86,6 +97,11 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONTROL_READ,
         INGEST_CONTROL_WRITE,
         INGEST_CONTROL_DELETE,
+        INGEST_VARIABLES_READ,
+        INGEST_VARIABLES_WRITE,
+        INGEST_VARIABLES_DELETE,
+        INGEST_VARIABLES_SECRET_READ,
+        INGEST_VARIABLES_SECRET_WRITE,
     },
     "editor": {
         INGEST_READ,
@@ -106,6 +122,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_SCHEDULES_RUN,
         INGEST_CONTROL_READ,
         INGEST_CONTROL_WRITE,
+        INGEST_VARIABLES_READ,
+        INGEST_VARIABLES_WRITE,
+        INGEST_VARIABLES_SECRET_WRITE,
     },
     "viewer": {
         INGEST_READ,
@@ -113,6 +132,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONNECTIONS_READ,
         INGEST_SCHEDULES_READ,
         INGEST_CONTROL_READ,
+        INGEST_VARIABLES_READ,
     },
     "stewardship": {
         INGEST_READ,
@@ -121,6 +141,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_JOBS_CODE_READ,
         INGEST_SCHEDULES_READ,
         INGEST_CONTROL_READ,
+        INGEST_VARIABLES_READ,
     },
     "data_owner": {
         INGEST_READ,
@@ -132,6 +153,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_SCHEDULES_READ,
         INGEST_SCHEDULES_RUN,
         INGEST_CONTROL_READ,
+        INGEST_VARIABLES_READ,
     },
 }
 

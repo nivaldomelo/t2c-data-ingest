@@ -281,6 +281,34 @@ Endpoints: `GET/POST /api/v1/ingestion-control`, `GET/PUT/DELETE /api/v1/ingesti
 Permissões: `ingest:control:read` (todos os perfis), `:write` (admin, editor), `:delete`
 (admin). Auditoria: `INGESTION_CONTROL_CREATED/UPDATED/DELETED/ACTIVATED/DEACTIVATED`.
 
+## Variáveis
+
+Parâmetros reutilizáveis para jobs/pipelines (evitam valores fixos no código). Ficam em
+`t2c_data_ingest.variables`. Cada job recebe as variáveis como **variáveis de ambiente** no
+runtime (`os.getenv("NOME")`), tanto para Python quanto Spark.
+
+- **Tipos:** `string, integer, decimal, boolean, date, datetime, json, secret`.
+- **Escopo:** `global, job, pipeline, environment` (vínculo a job/pipeline preparado via
+  `job_variables`, uso futuro). **Ambiente:** `local, dev, hml, prd` (ou vazio = global).
+- **Nome** é normalizado para formato de código (`bucket bronze` → `BUCKET_BRONZE`).
+- **Como usar:** o detalhe da variável tem a aba **Como usar** com exemplos prontos em
+  **Python** e **Spark** (editor estilo VS Code), além de `GET /api/v1/variables/{id}/usage-examples`.
+
+**Variáveis secretas** (`is_secret` ou tipo `secret`): o valor é **criptografado** em repouso
+(Fernet, mesma chave das Conexões) e **nunca** retornado pela API (aparece como `********`);
+ao editar, valor em branco mantém o atual; o valor real nunca vai para logs nem auditoria.
+Para **credenciais de banco**, prefira a tela **Conexões**; use variáveis secretas apenas para
+segredos de parâmetros de execução.
+
+Endpoints: `GET/POST /api/v1/variables`, `GET/PUT/DELETE /api/v1/variables/{id}`,
+`POST /api/v1/variables/{id}/{activate,deactivate}`, `GET /api/v1/variables/{id}/usage-examples`,
+`GET /api/v1/variables/summary`. Permissões: `ingest:variables:read` (todos), `:write`
+(admin, editor), `:delete` (admin), `:secret:write` (admin, editor), `:secret:read` (admin).
+Auditoria: `VARIABLE_CREATED/UPDATED/DELETED/ACTIVATED/DEACTIVATED/SECRET_UPDATED`.
+
+> **Boas práticas:** não coloque senha/token no código. Use **Conexões** para bancos e
+> **Variáveis** para parâmetros de execução (datas, buckets, flags, limites).
+
 ## Permissões (`ingest:*`)
 
 Derivadas dos perfis existentes do t2c_data, sem conceder privilégio administrativo indevido:
