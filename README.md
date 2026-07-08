@@ -136,7 +136,13 @@ Clique no nome de um job (ou em **Ver detalhes**) para abrir `/jobs/{id}`, com a
   usuário, busca na mensagem) e paginação de 25. Clique numa execução para abrir o detalhe.
 - **Código** — **editor estilo VS Code** (Monaco): tema escuro, numeração de linhas,
   syntax highlight, badge de linguagem, **Copiar**, **Recarregar** e **Salvar**. Veja abaixo.
-- **Configurações** — argumentos e chaves de variáveis de ambiente (valores ocultados).
+- **Configurações** — organizada em cards: **Configuração principal** (tipo, engine, ativo,
+  classe, script com copiar), **Execução** (cluster, timeout, retry, modo — com textos
+  amigáveis para vazios), **Conexões** (origem/destino/única com host:porta/database, status do
+  último teste e ações **Testar**/**Abrir conexão**, sem expor senha), **Argumentos** (bloco de
+  comando com copiar + alternância “Ver estruturado”), **Variáveis de ambiente** (valores
+  ocultados), **Tags** (badges + edição), **Metadados** e **Zona de perigo** (Excluir job). O
+  botão **Editar configurações** abre o drawer/modal de edição.
 
 Endpoints: `GET /api/v1/jobs/{id}`, `GET /api/v1/jobs/{id}/executions`
 (`page,page_size,status,date_from,date_to,user_id,search`), `GET /api/v1/jobs/{id}/code`.

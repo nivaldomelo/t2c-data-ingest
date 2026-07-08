@@ -35,8 +35,12 @@ export function JobEditModal({
   const [type, setType] = useState(job.type);
   const [engine, setEngine] = useState(job.engine ?? "");
   const [scriptPath, setScriptPath] = useState(job.script_path ?? "");
+  const [mainClass, setMainClass] = useState(job.main_class ?? "");
+  const [clusterId, setClusterId] = useState<string>(job.cluster_id?.toString() ?? "");
+  const [singleConn, setSingleConn] = useState<string>(job.connection_id?.toString() ?? "");
   const [sourceConn, setSourceConn] = useState<string>(job.source_connection_id?.toString() ?? "");
   const [targetConn, setTargetConn] = useState<string>(job.target_connection_id?.toString() ?? "");
+  const [args, setArgs] = useState<string>(((job.arguments ?? []) as unknown[]).map(String).join(" "));
   const [defaultParams, setDefaultParams] = useState(
     job.default_parameters ? JSON.stringify(job.default_parameters, null, 2) : ""
   );
@@ -72,8 +76,12 @@ export function JobEditModal({
         type,
         engine: engine.trim() || null,
         script_path: scriptPath.trim() || null,
+        main_class: mainClass.trim() || null,
+        cluster_id: clusterId ? Number(clusterId) : null,
+        connection_id: singleConn ? Number(singleConn) : null,
         source_connection_id: sourceConn ? Number(sourceConn) : null,
         target_connection_id: targetConn ? Number(targetConn) : null,
+        arguments: args.trim() ? args.trim().split(/\s+/) : null,
         default_parameters: defaultParams.trim() ? JSON.parse(defaultParams) : null,
         timeout_seconds: timeout.trim() ? Number(timeout) : null,
         retry_count: retry.trim() ? Number(retry) : 0,
@@ -147,6 +155,21 @@ export function JobEditModal({
           <p className="mt-1 text-xs text-gray-400">Deve estar dentro de um diretório permitido (spark/jobs, python_jobs…).</p>
         </div>
         <div>
+          <label className={labelCls}>Classe principal</label>
+          <input className={`${inputCls} font-mono text-xs`} value={mainClass} onChange={(e) => setMainClass(e.target.value)} placeholder="com.exemplo.Main" />
+        </div>
+        <div>
+          <label className={labelCls}>Cluster ID</label>
+          <input className={inputCls} type="number" min={0} value={clusterId} onChange={(e) => setClusterId(e.target.value)} placeholder="—" />
+        </div>
+        <div>
+          <label className={labelCls}>Conexão única</label>
+          <select className={inputCls} value={singleConn} onChange={(e) => setSingleConn(e.target.value)}>
+            <option value="">—</option>
+            {connOptions.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.connection_type})</option>)}
+          </select>
+        </div>
+        <div>
           <label className={labelCls}>Conexão origem</label>
           <select className={inputCls} value={sourceConn} onChange={(e) => setSourceConn(e.target.value)}>
             <option value="">—</option>
@@ -167,6 +190,11 @@ export function JobEditModal({
         <div>
           <label className={labelCls}>Retry</label>
           <input className={inputCls} type="number" min={0} value={retry} onChange={(e) => setRetry(e.target.value)} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls}>Argumentos</label>
+          <textarea className={`${inputCls} font-mono text-xs`} rows={2} value={args} onChange={(e) => setArgs(e.target.value)} placeholder="--source-connection mysql_1 --target-table payments" />
+          <p className="mt-1 text-xs text-gray-400">Separados por espaço. Ex.: <code>--flag valor</code>.</p>
         </div>
         <div className="sm:col-span-2">
           <label className={labelCls}>Parâmetros padrão (JSON)</label>

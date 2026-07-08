@@ -37,6 +37,7 @@ from t2c_ingest.schemas.schedule import ScheduleCreate, ScheduleOut
 from t2c_ingest.schemas.job import (
     JobCodeOut,
     JobCodeSaveRequest,
+    JobConnectionInfo,
     JobCreate,
     JobDeleteRequest,
     JobDeleteResult,
@@ -182,6 +183,27 @@ def _arg_connection_name(job: JobDefinition, flag: str) -> str | None:
     return None
 
 
+def _conn_info(conn: Connection | None) -> JobConnectionInfo | None:
+    """Build safe connection metadata (no secrets) from a Connection row."""
+    if not conn:
+        return None
+    return JobConnectionInfo(
+        id=conn.id, name=conn.name, type=conn.connection_type, host=conn.host,
+        port=conn.port, database=conn.database_name, last_test_status=conn.last_test_status,
+    )
+
+
+def _resolve_connection(db: Session, conn_id: int | None, arg_ref: str | None) -> Connection | None:
+    """Resolve a connection by id, falling back to a name reference from the job arguments."""
+    if conn_id:
+        conn = db.get(Connection, conn_id)
+        if conn:
+            return conn
+    if arg_ref:
+        return get_connection_by_ref(db, arg_ref)
+    return None
+
+
 def _jsonable(d: dict) -> dict:
     """Coerce a dict of model values to JSON-safe primitives for the audit trail."""
     out: dict = {}
@@ -236,12 +258,14 @@ def get_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     detail = JobDetailOut.model_validate(job)
-    detail.source_connection_name = _connection_name(db, job.source_connection_id) or _arg_connection_name(
-        job, "--source-connection"
-    )
-    detail.target_connection_name = _connection_name(db, job.target_connection_id) or _arg_connection_name(
-        job, "--target-connection"
-    )
+    src = _resolve_connection(db, job.source_connection_id, _arg_connection_name(job, "--source-connection"))
+    tgt = _resolve_connection(db, job.target_connection_id, _arg_connection_name(job, "--target-connection"))
+    single = db.get(Connection, job.connection_id) if job.connection_id else None
+    detail.source_connection = _conn_info(src)
+    detail.target_connection = _conn_info(tgt)
+    detail.connection = _conn_info(single)
+    detail.source_connection_name = detail.source_connection.name if detail.source_connection else None
+    detail.target_connection_name = detail.target_connection.name if detail.target_connection else None
 
     detail.executions_total = (
         db.scalar(select(func.count(Execution.id)).where(Execution.job_id == job_id)) or 0

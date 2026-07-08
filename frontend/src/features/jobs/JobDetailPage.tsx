@@ -158,7 +158,15 @@ export default function JobDetailPage() {
       {tab === "overview" && <JobOverviewTab job={job} />}
       {tab === "executions" && <JobExecutionsTab jobId={jobId} canRun={canRun} />}
       {tab === "schedules" && <JobSchedulesTab jobId={jobId} />}
-      {tab === "settings" && <JobSettingsTab job={job} />}
+      {tab === "settings" && (
+        <JobSettingsTab
+          job={job}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => setEditOpen(true)}
+          onDelete={() => setDeleteOpen(true)}
+        />
+      )}
 
       <JobCodeWorkspaceModal
         jobId={jobId}

@@ -30,11 +30,24 @@ export interface JobDetail {
   // enriched
   source_connection_name: string | null;
   target_connection_name: string | null;
+  source_connection: JobConnectionInfo | null;
+  target_connection: JobConnectionInfo | null;
+  connection: JobConnectionInfo | null;
   executions_total: number;
   last_execution_id: number | null;
   last_status: string | null;
   last_finished_at: string | null;
   avg_duration_seconds: number | null;
+}
+
+export interface JobConnectionInfo {
+  id: number | null;
+  name: string | null;
+  type: string | null;
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  last_test_status: string | null;
 }
 
 export interface JobExecution {

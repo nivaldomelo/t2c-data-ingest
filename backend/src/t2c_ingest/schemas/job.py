@@ -77,11 +77,27 @@ class JobOut(JobBase):
     archived_code_path: str | None = None
 
 
+class JobConnectionInfo(BaseModel):
+    """Resolved connection metadata for the job settings/overview (never includes secrets)."""
+
+    id: int | None = None
+    name: str | None = None
+    type: str | None = None
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    last_test_status: str | None = None
+
+
 class JobDetailOut(JobOut):
     """Job detail enriched with connection names and execution stats for the overview tab."""
 
     source_connection_name: str | None = None
     target_connection_name: str | None = None
+    # Structured connection details (resolved by id or by name from the job arguments).
+    source_connection: JobConnectionInfo | None = None
+    target_connection: JobConnectionInfo | None = None
+    connection: JobConnectionInfo | None = None
     executions_total: int = 0
     last_execution_id: int | None = None
     last_status: str | None = None

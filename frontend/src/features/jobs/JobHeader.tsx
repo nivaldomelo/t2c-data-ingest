@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Play, Trash2 } from "lucide-react";
+import { Pencil, Play, Trash2 } from "lucide-react";
 
 import { PrimaryButton, SecondaryButton, StatusBadge } from "@/components/ui";
 import type { JobDetail } from "@/features/jobs/types";
@@ -27,12 +27,12 @@ export function JobHeader({
   const navigate = useNavigate();
   return (
     <div className="mb-6">
-      <button
-        onClick={() => navigate("/jobs")}
-        className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-800"
-      >
-        <ArrowLeft size={16} /> Voltar para Jobs
-      </button>
+      {/* Breadcrumb discreto (evita duplicar o botão Voltar do header). */}
+      <nav className="mb-4 flex items-center gap-1.5 text-sm text-gray-400">
+        <button onClick={() => navigate("/jobs")} className="transition-colors hover:text-gray-700">Jobs</button>
+        <span>/</span>
+        <span className="truncate font-medium text-gray-600">{job.name}</span>
+      </nav>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
