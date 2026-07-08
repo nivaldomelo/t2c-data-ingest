@@ -37,7 +37,3 @@ backups/*
 .idea/
 .vscode/
 *.swp
-
-# Job code workspaces (keep folder)
-workspaces/*
-!workspaces/.gitkeep

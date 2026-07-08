@@ -80,12 +80,17 @@ class Settings(BaseSettings):
     # Directories the job code viewer is allowed to read from (comma-separated). Any script
     # outside these (or path traversal) is rejected.
     allowed_script_dirs: str = Field(
-        default="/opt/t2c/spark/jobs,/opt/t2c/python_jobs,/opt/spark/jobs,/app/jobs,/opt/t2c/jobs/workspaces",
+        default="/opt/t2c/spark/jobs,/opt/t2c/python_jobs,/opt/spark/jobs,/app/jobs",
         validation_alias="ALLOWED_SCRIPT_DIRS",
     )
-    # Base dir for per-job code workspaces (auto-created when a job has no script in an allowed dir).
-    job_workspaces_dir: str = Field(
-        default="/opt/t2c/jobs/workspaces", validation_alias="JOB_WORKSPACES_DIR"
+    # Versioned (git-tracked) roots where new jobs' code is provisioned, by engine. Every job's
+    # code lives here so it is committed to GitHub and shipped by CI/CD (K8s) — there is no
+    # unversioned scratch area.
+    spark_jobs_dir: str = Field(
+        default="/opt/t2c/spark/jobs", validation_alias="SPARK_JOBS_DIR"
+    )
+    python_jobs_dir: str = Field(
+        default="/opt/t2c/python_jobs", validation_alias="PYTHON_JOBS_DIR"
     )
 
     @property

@@ -22,16 +22,6 @@ MAX_BYTES = 1_000_000
 _LANG = {".py": "python", ".sql": "sql", ".sh": "shell", ".json": "json", ".yaml": "yaml",
          ".yml": "yaml", ".md": "markdown", ".txt": "text"}
 
-MAIN_TEMPLATES = {
-    "spark_python": (
-        'from pyspark.sql import SparkSession\n\n'
-        'spark = (\n    SparkSession.builder\n    .appName("novo_job_spark")\n    .getOrCreate()\n)\n\n'
-        'try:\n    print("Iniciando job Spark")\nfinally:\n    spark.stop()\n'
-    ),
-    "python": 'def main():\n    print("Iniciando job Python")\n\n\nif __name__ == "__main__":\n    main()\n',
-}
-
-
 class WorkspaceError(Exception):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
@@ -51,27 +41,19 @@ def _within_allowed(real: str) -> bool:
 
 
 def resolve_workspace(job: JobDefinition) -> str:
-    """Return the job's workspace root (realpath), guaranteed inside an allowed dir.
+    """Return the job's workspace root (realpath): the folder of its versioned script.
 
-    Uses the script's parent dir when the script lives in an allowed dir; otherwise a per-job
-    dir under JOB_WORKSPACES_DIR (auto-created with a starter main.py)."""
+    All jobs are provisioned with a script inside a git-tracked allowed dir, so the workspace is
+    that script's parent folder. Jobs without a valid versioned script cannot open a workspace."""
     if job.script_path:
         parent = os.path.realpath(os.path.dirname(job.script_path))
         if _within_allowed(parent):
             return parent
-    base = os.path.realpath(settings.job_workspaces_dir)
-    root = os.path.join(base, str(job.id))
-    if not (_within_allowed(base) or _within_allowed(os.path.realpath(root))):
-        raise WorkspaceError(500, "Diretório de workspaces não está entre os permitidos.")
-    if not os.path.exists(root):
-        os.makedirs(root, exist_ok=True)
-        os.makedirs(os.path.join(root, "utils"), exist_ok=True)
-        tmpl = MAIN_TEMPLATES.get(job.type or "", MAIN_TEMPLATES["python"])
-        with open(os.path.join(root, "main.py"), "w", encoding="utf-8") as fh:
-            fh.write(tmpl)
-        with open(os.path.join(root, "README.md"), "w", encoding="utf-8") as fh:
-            fh.write(f"# {job.name}\n\nWorkspace de código do job.\n")
-    return os.path.realpath(root)
+    raise WorkspaceError(
+        400,
+        "Este job não possui um script versionado em um diretório permitido. "
+        "Defina o caminho do script (em spark/jobs ou python_jobs) antes de abrir o workspace.",
+    )
 
 
 def safe_path(root: str, rel_path: str | None, *, must_exist: bool = False) -> str:

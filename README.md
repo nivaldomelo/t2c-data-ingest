@@ -171,9 +171,25 @@ Recarregue o código antes de salvar."*
 
 **Segurança de caminho.** O backend só serve/edita arquivos **dentro dos diretórios permitidos**
 (`ALLOWED_SCRIPT_DIRS`, padrão `/opt/t2c/spark/jobs`, `/opt/t2c/python_jobs`, `/opt/spark/jobs`,
-`/app/jobs`, `/opt/t2c/jobs/workspaces`). O caminho é resolvido com `realpath` — path traversal
-(`../`), **caminhos absolutos** (`/etc/passwd`) e caminhos fora da allowlist retornam erro
-amigável; a pasta raiz do job nunca pode ser renomeada/excluída.
+`/app/jobs`). O caminho é resolvido com `realpath` — path traversal (`../`), **caminhos
+absolutos** (`/etc/passwd`) e caminhos fora da allowlist retornam erro amigável; a pasta raiz do
+job nunca pode ser renomeada/excluída.
+
+### Todo código é versionado (deploy via Git)
+
+Não existe área de rascunho fora do Git. Ao **criar um job**, se você não informar um
+`script_path`, o backend **provisiona** um arquivo inicial dentro de um diretório versionado,
+conforme o tipo do job:
+
+- `python` → `PYTHON_JOBS_DIR/{slug}/main.py` (padrão `/opt/t2c/python_jobs`, montado de `./python_jobs`)
+- `spark_python` / `spark_submit` → `SPARK_JOBS_DIR/{slug}/main.py` (padrão `/opt/spark/jobs`, montado de `./spark/jobs`)
+- `spark_sql` → `SPARK_JOBS_DIR/{slug}/main.sql`
+
+O `{slug}` vem do nome do job (`{slug}-{id}` se já existir), garantindo uma pasta isolada por
+job, com `main.*` de arranque e `README.md`. Um `script_path` informado explicitamente é aceito
+somente se estiver dentro de um diretório permitido (senão, 403). Assim o código aparece na
+árvore do repositório, é **commitado no GitHub** e entregue pelo CI/CD (futuro deploy em
+Kubernetes) — a origem da verdade é sempre o Git.
 
 ### Workspace de código (estilo VS Code)
 
@@ -181,10 +197,9 @@ Pelo botão **Abrir workspace** (aba **Código**) abre-se um modal grande (95vw 
 experiência de um editor multi-arquivo:
 
 - **Explorador de arquivos** à esquerda: árvore do workspace do job com pastas expansíveis,
-  criar arquivo/pasta, renomear e excluir (ações no hover). O workspace é a pasta do script do
-  job quando ela está numa allowlist; caso contrário, uma pasta por job em
-  `JOB_WORKSPACES_DIR` (padrão `/opt/t2c/jobs/workspaces/{id}`, montada de `./workspaces`),
-  criada automaticamente com `main.py`, `utils/` e `README.md`.
+  criar arquivo/pasta, renomear e excluir (ações no hover). O workspace é **a pasta do script
+  versionado do job** (em `spark/jobs` ou `python_jobs`); jobs sem script válido não abrem
+  workspace (mensagem orientando a definir o caminho).
 - **Abas** de arquivos abertos com indicador de não salvo e fechar por aba; **Ctrl/Cmd+S** salva
   a aba ativa; barra de status com job, arquivo, tamanho e última modificação.
 - **Endpoints:** `GET workspace/tree`, `GET/PUT/POST/DELETE workspace/file`,

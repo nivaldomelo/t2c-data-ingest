@@ -13,9 +13,11 @@ from t2c_ingest.features.auth_bridge import permissions as perms
 from t2c_ingest.features.connections.repository import get_connection_by_ref
 from t2c_ingest.features.jobs.code_service import (
     CodeError,
+    assert_within_allowed,
     detect_language,
     file_metadata,
     is_editable_extension,
+    provision_job_script,
     read_job_code,
     write_job_code,
 )
@@ -139,6 +141,15 @@ def create_job(
     job = JobDefinition(**payload.model_dump(), created_by=user.email, updated_by=user.email)
     db.add(job)
     db.flush()
+    # Every job is born versioned: an explicit script_path must live inside an allowed
+    # (git-tracked) dir; otherwise we provision one under spark/jobs or python_jobs.
+    try:
+        if job.script_path and job.script_path.strip():
+            assert_within_allowed(job.script_path)
+        else:
+            job.script_path = provision_job_script(job.type, job.name, job.id)
+    except CodeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
     record_audit(db, action="ingest.job.created", user=user, entity_type="job", entity_id=job.id)
     db.commit()
     db.refresh(job)
