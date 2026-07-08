@@ -518,6 +518,67 @@ instalação, o botão *Instalar biblioteca* não aparece; sem permissão de rem
 Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
 validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
 
+## Ambiente de Execução (runtime do cluster)
+
+Para garantir que **bibliotecas e código dos jobs estejam iguais em todos os workers** (inclusive
+novos pods no Kubernetes), o T2C Data Ingest não instala libs em containers vivos. Em vez disso
+segue o modelo de produção:
+
+```
+Cadastro de bibliotecas → requirements.txt → build de imagem Docker versionada
+→ deploy do cluster com essa imagem → driver + executors usando a MESMA imagem → validação distribuída
+```
+
+A tela **Ambiente de Execução** (`/runtime`) tem quatro abas:
+
+1. **Bibliotecas** — manifesto das dependências Python (nome+versão, ativar/inativar, remover).
+   Validadas pelo mesmo whitelist seguro das Bibliotecas (só PyPI).
+2. **requirements.txt** — gerado automaticamente das libs ativas; botão **Criar build de imagem**.
+3. **Builds do Runtime** — histórico versionado; status (`queued/building/success/failed/active/deprecated`),
+   duração, **logs do build**, **requirements snapshot** e **Ativar** imagem.
+4. **Validação do Cluster** — **Validar execução distribuída** e **Validar bibliotecas** (e “Validar
+   tudo”), com resultado por worker.
+
+### Como funciona o build
+
+O worker monta um **contexto de build** (`RUNTIME_BUILD_CONTEXT_DIR`, montado de `./runtime-builds`)
+com `Dockerfile`, `runtime/requirements.txt`, o **código dos jobs** (`spark/jobs`, `python_jobs`,
+`spark/jars`) e um `jobs_snapshot.json`, e roda `docker build` contra o daemon do host (socket
+montado no worker; em K8s isto vira um passo de CI). Segredos (`.env/.pem/.key/.crt`) são excluídos
+via `.dockerignore` e do `copytree`. A imagem sai versionada:
+`t2c-data-ingest-spark-runtime:<AAAAMMDD.HHMMSS>`. Base configurável em `RUNTIME_BASE_IMAGE`.
+
+> **Python do driver × executors:** o PySpark exige a mesma versão de Python no driver e nos
+> executors. A imagem base `apache/spark:3.5.1` traz **Python 3.8** — por isso as validações
+> distribuídas submetem o `spark-submit` de dentro de um container Spark (via `docker exec`), e a
+> imagem runtime deve ser usada por driver **e** workers. Libs modernas (ex.: `pandas>=2.1`) exigem
+> Python ≥3.9 — ajuste `RUNTIME_BASE_IMAGE` para uma base com Python mais novo se precisar delas.
+
+### 3 workers locais + validação distribuída
+
+O `docker-compose` sobe **`spark-worker-1/2/3`** (1 core cada, mesma imagem, `spreadOut` → um
+executor por worker). As validações são jobs Spark reais em `spark/jobs/system/`:
+
+- `validate_distributed_execution.py` — paraleliza N partições e confirma que **≥3 workers**
+  processaram (falha se tudo rodar num só). Ex.: `spark-worker-1/2/3: 10 partições` cada.
+- `validate_runtime_libraries.py` — importa as libs **nos executors** e reporta ausências por host
+  (ex.: “`pyarrow` ausente em `spark-worker-3`”). É assim que se investiga lib faltando num worker.
+
+Fluxo local ponta a ponta (validado): cadastrar libs → gerar `requirements.txt` → **Criar build**
+(imagem versionada com libs+jobs) → **Ativar** → **Validar execução distribuída** (3 workers) e
+**Validar bibliotecas**.
+
+### Kubernetes (futuro)
+
+Driver e executors usam a **mesma imagem** versionada (push para o ECR); `executor.instances`
+configurável; jobs e libs já dentro da imagem — nada de instalação manual após o pod subir. Um job
+pode fixar `runtime_build_id` (coluna já criada) ou usar o runtime **ativo** por padrão.
+
+Permissões: `ingest:runtime:read` (todos), `ingest:runtime:libraries:write`, `ingest:runtime:build`,
+`ingest:runtime:activate` (admin) e `ingest:runtime:validate` (admin/editor/data_owner). Eventos de
+auditoria: `RUNTIME_LIBRARY_ADDED/UPDATED/REMOVED`, `RUNTIME_BUILD_REQUESTED/STARTED/SUCCEEDED/FAILED/ACTIVATED`,
+`RUNTIME_VALIDATION_STARTED/SUCCEEDED/FAILED`.
+
 ## Migração do Airflow (gradual)
 
 O módulo **Airflow legado** nasce como **inventário**, não migração automática. As DAGs de

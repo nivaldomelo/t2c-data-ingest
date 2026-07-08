@@ -6,6 +6,7 @@ import LoginPage from "@/features/auth/LoginPage";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import ClustersPage from "@/features/clusters/ClustersPage";
 import LibrariesPage from "@/features/libraries/LibrariesPage";
+import RuntimePage from "@/features/runtime/RuntimePage";
 import ConnectionsPage from "@/features/connections/ConnectionsPage";
 import IngestionControlPage from "@/features/ingestion-control/IngestionControlPage";
 import VariablesPage from "@/features/variables/VariablesPage";
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/variables" element={<VariablesPage />} />
         <Route path="/clusters" element={<ClustersPage />} />
         <Route path="/libraries" element={<LibrariesPage />} />
+        <Route path="/runtime" element={<RuntimePage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:id" element={<JobDetailPage />} />
         <Route path="/pipelines" element={<PipelinesPage />} />

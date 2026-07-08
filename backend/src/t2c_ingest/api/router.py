@@ -12,6 +12,7 @@ from t2c_ingest.features.ingestion_control.router import router as ingestion_con
 from t2c_ingest.features.variables.router import router as variables_router
 from t2c_ingest.features.jobs.router import router as jobs_router
 from t2c_ingest.features.jobs.workspace_router import router as jobs_workspace_router
+from t2c_ingest.features.runtime.router import router as runtime_router
 from t2c_ingest.features.pipelines.router import router as pipelines_router
 from t2c_ingest.features.pipelines.router import pe_router as pipeline_executions_router
 from t2c_ingest.features.schedules.router import router as schedules_router
@@ -33,4 +34,5 @@ api_router.include_router(variables_router)
 api_router.include_router(tags_router)
 api_router.include_router(libraries_router)
 api_router.include_router(library_actions_router)
+api_router.include_router(runtime_router)
 api_router.include_router(airflow_router)

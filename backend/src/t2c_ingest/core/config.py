@@ -125,6 +125,17 @@ class Settings(BaseSettings):
     library_pip_user: bool = Field(default=True, validation_alias="LIBRARY_PIP_USER")
     library_install_timeout: int = Field(default=600, validation_alias="LIBRARY_INSTALL_TIMEOUT")
 
+    # ── Cluster runtime image (libraries + jobs baked into a versioned image) ──
+    runtime_image_name: str = Field(default="t2c-data-ingest-spark-runtime", validation_alias="RUNTIME_IMAGE_NAME")
+    runtime_base_image: str = Field(default="apache/spark:3.5.1", validation_alias="RUNTIME_BASE_IMAGE")
+    # Where build contexts are written (mounted volume). The worker runs `docker build` here.
+    runtime_build_context_dir: str = Field(default="/opt/t2c/runtime/builds", validation_alias="RUNTIME_BUILD_CONTEXT_DIR")
+    runtime_build_timeout: int = Field(default=1800, validation_alias="RUNTIME_BUILD_TIMEOUT")
+    # A running Spark container the worker uses (via `docker exec`) to spark-submit validations,
+    # so the driver Python matches the executors (the runtime image). Empty disables docker exec.
+    runtime_spark_submit_container: str = Field(default="", validation_alias="RUNTIME_SPARK_SUBMIT_CONTAINER")
+    spark_expected_workers: int = Field(default=3, validation_alias="SPARK_EXPECTED_WORKERS")
+
     @property
     def job_code_editable_extensions_set(self) -> set[str]:
         return {e.strip().lower() for e in self.job_code_editable_extensions.split(",") if e.strip()}

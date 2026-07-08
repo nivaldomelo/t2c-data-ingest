@@ -238,6 +238,38 @@ def _process_library_actions() -> bool:
         return False
 
 
+def _process_runtime_jobs() -> bool:
+    """Claim and run one queued runtime build or validation (image build / cluster validation)."""
+    ran = False
+    try:
+        from t2c_ingest.features.runtime.service import run_build, run_validation
+        from t2c_ingest.models.runtime import RuntimeBuild, RuntimeValidation
+
+        with SessionLocal() as db:
+            build = db.scalar(
+                select(RuntimeBuild).where(RuntimeBuild.status == "queued")
+                .order_by(RuntimeBuild.id).with_for_update(skip_locked=True).limit(1)
+            )
+            if build is not None:
+                print(f"[worker] runtime build {build.id} ({build.image_full_name})")
+                run_build(db, build)
+                print(f"[worker] runtime build {build.id} -> {build.status}")
+                return True
+        with SessionLocal() as db:
+            val = db.scalar(
+                select(RuntimeValidation).where(RuntimeValidation.status == "queued")
+                .order_by(RuntimeValidation.id).with_for_update(skip_locked=True).limit(1)
+            )
+            if val is not None:
+                print(f"[worker] runtime validation {val.id} ({val.validation_type})")
+                run_validation(db, val)
+                print(f"[worker] runtime validation {val.id} -> {val.status}")
+                return True
+    except Exception as exc:  # noqa: BLE001 - never let a runtime job kill the worker loop
+        print(f"[worker] runtime job error: {exc}")
+    return ran
+
+
 def main() -> None:
     poll = settings.worker_poll_interval_seconds
     print(f"[worker] started; polling every {poll}s; spark master={settings.spark_master_url}")
@@ -254,6 +286,9 @@ def main() -> None:
         _advance_pipelines()
         # Process one queued library install/uninstall per tick.
         if _process_library_actions():
+            ran = True
+        # Process one queued runtime build/validation per tick.
+        if _process_runtime_jobs():
             ran = True
         if not ran:
             time.sleep(poll)

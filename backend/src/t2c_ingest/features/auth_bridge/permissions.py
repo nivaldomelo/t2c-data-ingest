@@ -51,6 +51,12 @@ INGEST_LIBRARIES_READ = "ingest:libraries:read"
 INGEST_LIBRARIES_INSTALL = "ingest:libraries:install"
 INGEST_LIBRARIES_UNINSTALL = "ingest:libraries:uninstall"
 INGEST_LIBRARIES_MANAGE = "ingest:libraries:manage"
+# Runtime environment (managed image: libraries manifest + builds + cluster validation).
+INGEST_RUNTIME_READ = "ingest:runtime:read"
+INGEST_RUNTIME_LIBRARIES_WRITE = "ingest:runtime:libraries:write"
+INGEST_RUNTIME_BUILD = "ingest:runtime:build"
+INGEST_RUNTIME_ACTIVATE = "ingest:runtime:activate"
+INGEST_RUNTIME_VALIDATE = "ingest:runtime:validate"
 # Tags (job organization/search).
 INGEST_TAGS_READ = "ingest:tags:read"
 INGEST_TAGS_WRITE = "ingest:tags:write"
@@ -100,6 +106,11 @@ ALL_PERMISSIONS = {
     INGEST_LIBRARIES_INSTALL,
     INGEST_LIBRARIES_UNINSTALL,
     INGEST_LIBRARIES_MANAGE,
+    INGEST_RUNTIME_READ,
+    INGEST_RUNTIME_LIBRARIES_WRITE,
+    INGEST_RUNTIME_BUILD,
+    INGEST_RUNTIME_ACTIVATE,
+    INGEST_RUNTIME_VALIDATE,
     INGEST_TAGS_READ,
     INGEST_TAGS_WRITE,
     INGEST_TAGS_DELETE,
@@ -153,6 +164,11 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_LIBRARIES_INSTALL,
         INGEST_LIBRARIES_UNINSTALL,
         INGEST_LIBRARIES_MANAGE,
+        INGEST_RUNTIME_READ,
+        INGEST_RUNTIME_LIBRARIES_WRITE,
+        INGEST_RUNTIME_BUILD,
+        INGEST_RUNTIME_ACTIVATE,
+        INGEST_RUNTIME_VALIDATE,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_TAGS_DELETE,
@@ -190,6 +206,10 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_LIBRARIES_READ,
         INGEST_LIBRARIES_INSTALL,
         INGEST_LIBRARIES_UNINSTALL,
+        INGEST_RUNTIME_READ,
+        INGEST_RUNTIME_LIBRARIES_WRITE,
+        INGEST_RUNTIME_BUILD,
+        INGEST_RUNTIME_VALIDATE,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_JOBS_TAGS_WRITE,
@@ -203,6 +223,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_VARIABLES_READ,
         INGEST_PIPELINES_READ,
         INGEST_LIBRARIES_READ,
+        INGEST_RUNTIME_READ,
         INGEST_TAGS_READ,
     },
     "stewardship": {
@@ -215,6 +236,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_VARIABLES_READ,
         INGEST_PIPELINES_READ,
         INGEST_LIBRARIES_READ,
+        INGEST_RUNTIME_READ,
         INGEST_TAGS_READ,
     },
     "data_owner": {
@@ -231,6 +253,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_READ,
         INGEST_PIPELINES_RUN,
         INGEST_LIBRARIES_READ,
+        INGEST_RUNTIME_READ,
+        INGEST_RUNTIME_VALIDATE,
         INGEST_TAGS_READ,
     },
 }

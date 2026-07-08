@@ -41,3 +41,7 @@ archive/*
 .idea/
 .vscode/
 *.swp
+
+# Runtime image build contexts (generated; persisted on a volume in prod)
+runtime-builds/*
+!runtime-builds/.gitkeep
