@@ -13,12 +13,42 @@ ordem topológica, com o resultado de cada job liberando (ou pulando) os próxim
 ## Como usar
 
 1. **Pipelines → Novo pipeline** (nome, descrição, grupo) → abre a tela de detalhe.
-2. Aba **Builder**: arraste jobs da lateral para o canvas, conecte-os arrastando entre as
-   bolinhas dos nós (saída laranja → entrada), clique num nó/aresta para editar no painel, e
-   clique **Salvar** (`PUT /pipelines/{id}/graph`). Use **Validar** para checar antes.
-3. Aba **Execuções**: histórico de execuções do pipeline; clique numa execução para ver o
-   **status por step** (timeline) e abrir os **logs** do job de cada step.
-4. **Executar pipeline** (topo): valida e dispara (`POST /pipelines/{id}/run`).
+2. Clique em **Abrir Builder** — abre um **modal amplo centralizado** (95vw × 90vh) estilo grafo
+   do Airflow, mais moderno.
+
+### No builder (modal)
+
+- **Header**: nome, status, nº de jobs/conexões, última execução, indicador **"não salvo"** e
+  botões **Validar / Organizar / Salvar / Executar / Fechar**. Fechar com alterações pendentes
+  pede confirmação.
+- **Sidebar de jobs**: busca + adicionar ao canvas.
+- **Canvas**: minimap, controles (zoom/fit), pan, arrastar nós. Criar conexões de 3 formas:
+  1. **arrastar** da bolinha de saída (laranja, à direita) para a entrada de outro nó;
+  2. **+ no nó** (aparece no hover) → escolhe o próximo job, que é adicionado à direita e já
+     conectado;
+  3. selecionar e editar no **painel de propriedades**.
+- **Organizar layout**: reorganiza os nós em camadas da esquerda para a direita (dagre),
+  facilitando pipelines grandes.
+- **Painel de propriedades** (direita): edita step (nome, run_if, retry, timeout, ativo) ou a
+  conexão (tipo de dependência); em execução, mostra status/logs do step.
+- **Painel inferior** com abas **Validações / Execução (timeline) / Logs**.
+
+### Cores (nós e conexões)
+
+Nós: `queued/pending` cinza · `running` laranja (pulsando) · `success` verde · `failed` vermelho
+· `skipped` cinza claro · `timeout` âmbar · `cancelled` cinza. Conexões: `waiting` cinza ·
+`released` laranja · `success` verde · `blocked` vermelho · `skipped` cinza.
+
+### Modo edição x acompanhamento
+
+Ao clicar **Executar**, o builder entra em **modo acompanhamento**: a edição estrutural é
+bloqueada, e o grafo atualiza sozinho (polling de `GET /pipeline-executions/{id}/graph-status`
+a cada 3s até o status final) colorindo nós e conexões. Clique num nó para ver status e logs do
+step (`/step/{step_execution_id}/logs`). A aba **Execução** mostra a linha do tempo
+(`/timeline`). Toast final indica sucesso / falha / sucesso parcial.
+
+> `Salvar` só no modo edição (`PUT /pipelines/{id}/graph`, valida antes). Posições dos nós são
+> persistidas; na reabertura o layout salvo é carregado (ou use **Organizar**).
 
 ## Validações (antes de salvar/executar)
 

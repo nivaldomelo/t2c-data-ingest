@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { Card, EmptyState, PrimaryButton, StatusBadge } from "@/components/ui";
 import { Skeleton } from "@/components/ui/LoadingSkeleton";
-import { PipelineBuilder } from "@/features/pipelines/PipelineBuilder";
+import { PipelineBuilderModal } from "@/features/pipelines/PipelineBuilderModal";
 import { PipelineExecutionsTab } from "@/features/pipelines/PipelineExecutionsTab";
 import type { PipelineDetail } from "@/features/pipelines/types";
 import { fmtDate, fmtDuration } from "@/features/pipelines/types";
@@ -29,6 +29,7 @@ export default function PipelineDetailPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const [tab, setTab] = useState<Tab>("overview");
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   const { data: p, isLoading, error } = useQuery({
     queryKey: ["pipeline", pid],
@@ -45,7 +46,6 @@ export default function PipelineDetailPage() {
   if (error || !p) return <EmptyState title="Pipeline não encontrado" description="O pipeline solicitado não existe." />;
 
   const canRun = can("ingest:pipelines:run");
-  const canWrite = can("ingest:pipelines:builder");
 
   return (
     <div>
@@ -61,9 +61,14 @@ export default function PipelineDetailPage() {
             </div>
             {p.description && <p className="mt-1 text-sm text-gray-500">{p.description}</p>}
           </div>
-          {canRun && <PrimaryButton icon={<PlayCircle size={16} />} loading={run.isPending} disabled={!p.is_active} onClick={() => run.mutate()}>Executar pipeline</PrimaryButton>}
+          <div className="flex items-center gap-2">
+            <PrimaryButton icon={<GitBranch size={16} />} onClick={() => setBuilderOpen(true)}>Abrir Builder</PrimaryButton>
+            {canRun && <PrimaryButton className="bg-gray-800 hover:bg-gray-900" icon={<PlayCircle size={16} />} loading={run.isPending} disabled={!p.is_active} onClick={() => run.mutate()}>Executar</PrimaryButton>}
+          </div>
         </div>
       </div>
+
+      {builderOpen && <PipelineBuilderModal pipeline={p} onClose={() => { setBuilderOpen(false); qc.invalidateQueries({ queryKey: ["pipeline", pid] }); }} />}
 
       <div className="mb-6 border-b border-gray-200">
         <nav className="-mb-px flex gap-1">
@@ -102,7 +107,13 @@ export default function PipelineDetailPage() {
         </div>
       )}
 
-      {tab === "builder" && <PipelineBuilder pipelineId={pid} canWrite={canWrite} />}
+      {tab === "builder" && (
+        <Card className="flex flex-col items-center gap-3 p-10 text-center">
+          <GitBranch size={28} className="text-brand-500" />
+          <p className="text-sm text-gray-600">Monte a DAG do pipeline no editor visual (modal amplo, estilo Airflow).</p>
+          <PrimaryButton icon={<GitBranch size={16} />} onClick={() => setBuilderOpen(true)}>Abrir Builder</PrimaryButton>
+        </Card>
+      )}
       {tab === "executions" && <PipelineExecutionsTab pipelineId={pid} />}
       {tab === "logs" && (
         <Card className="p-5">

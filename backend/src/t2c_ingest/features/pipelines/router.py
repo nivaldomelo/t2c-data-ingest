@@ -11,14 +11,19 @@ from t2c_ingest.features.auth_bridge import permissions as perms
 from t2c_ingest.features.pipelines.graph_service import load_graph, save_graph, validate_graph
 from t2c_ingest.features.pipelines.runner import start_pipeline_execution
 from t2c_ingest.models.job import JobDefinition
+from t2c_ingest.models.execution import ExecutionLog
 from t2c_ingest.models.pipeline import (
     PipelineDefinition,
     PipelineExecution,
+    PipelineStep,
     PipelineStepDependency,
     PipelineStepExecution,
 )
 from t2c_ingest.schemas.pipeline import (
     GraphPayload,
+    GraphStatus,
+    GraphStatusEdge,
+    GraphStatusNode,
     PipelineCreate,
     PipelineDetailOut,
     PipelineExecutionDetailOut,
@@ -26,6 +31,9 @@ from t2c_ingest.schemas.pipeline import (
     PipelineOut,
     PipelineStepExecutionOut,
     PipelineUpdate,
+    StepLogLine,
+    StepLogs,
+    TimelineEvent,
     ValidationResult,
 )
 from t2c_ingest.services.audit import record_audit
@@ -257,3 +265,88 @@ def pipeline_execution_steps(
         select(PipelineStepExecution).where(PipelineStepExecution.pipeline_execution_id == execution_id).order_by(PipelineStepExecution.id)
     ).all()
     return [PipelineStepExecutionOut.model_validate(s) for s in steps]
+
+
+def _edge_status(src: str | None, tgt: str | None) -> str:
+    if src == "success":
+        return "success" if tgt in ("running", "success", "failed") else "released"
+    if src in ("failed", "skipped"):
+        return "blocked"
+    return "waiting"
+
+
+@pe_router.get("/{execution_id}/graph-status", response_model=GraphStatus)
+def graph_status(
+    execution_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_PIPELINES_READ)),
+) -> GraphStatus:
+    pe = db.get(PipelineExecution, execution_id)
+    if not pe:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execução de pipeline não encontrada")
+    step_execs = db.scalars(
+        select(PipelineStepExecution).where(PipelineStepExecution.pipeline_execution_id == pe.id)
+    ).all()
+    status_by_step = {se.step_id: se.status for se in step_execs}
+    step_keys = {s.id: s.step_key for s in db.scalars(select(PipelineStep).where(PipelineStep.pipeline_id == pe.pipeline_id)).all()}
+    nodes = [
+        GraphStatusNode(
+            step_id=se.step_id, step_key=step_keys.get(se.step_id), job_id=se.job_id, status=se.status,
+            started_at=se.started_at, finished_at=se.finished_at, duration_seconds=se.duration_seconds, message=se.message,
+        )
+        for se in step_execs
+    ]
+    deps = db.scalars(select(PipelineStepDependency).where(PipelineStepDependency.pipeline_id == pe.pipeline_id)).all()
+    edges = [
+        GraphStatusEdge(
+            source_step_id=d.upstream_step_id, target_step_id=d.downstream_step_id,
+            status=_edge_status(status_by_step.get(d.upstream_step_id), status_by_step.get(d.downstream_step_id)),
+        )
+        for d in deps
+    ]
+    return GraphStatus(
+        pipeline_execution_id=pe.id, pipeline_id=pe.pipeline_id, status=pe.status,
+        started_at=pe.started_at, finished_at=pe.finished_at, nodes=nodes, edges=edges,
+    )
+
+
+@pe_router.get("/{execution_id}/timeline", response_model=list[TimelineEvent])
+def timeline(
+    execution_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_PIPELINES_READ)),
+) -> list[TimelineEvent]:
+    step_execs = db.scalars(
+        select(PipelineStepExecution).where(PipelineStepExecution.pipeline_execution_id == execution_id)
+    ).all()
+    events: list[TimelineEvent] = []
+    for se in step_execs:
+        if se.started_at:
+            events.append(TimelineEvent(time=se.started_at, step_id=se.step_id, job_id=se.job_id, event="iniciado", status="running"))
+        if se.finished_at:
+            ev = {"success": "sucesso", "failed": "erro", "skipped": "ignorado"}.get(se.status, se.status)
+            events.append(TimelineEvent(time=se.finished_at, step_id=se.step_id, job_id=se.job_id, event=ev, status=se.status))
+    events.sort(key=lambda e: e.time)
+    return events
+
+
+@pe_router.get("/{execution_id}/step/{step_execution_id}/logs", response_model=StepLogs)
+def step_logs(
+    execution_id: int,
+    step_execution_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_PIPELINES_READ)),
+) -> StepLogs:
+    se = db.get(PipelineStepExecution, step_execution_id)
+    if not se or se.pipeline_execution_id != execution_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step da execução não encontrado")
+    lines: list[StepLogLine] = []
+    if se.execution_id:
+        rows = db.scalars(
+            select(ExecutionLog).where(ExecutionLog.execution_id == se.execution_id)
+            .order_by(ExecutionLog.seq.desc()).limit(max(1, min(limit, 500)))
+        ).all()
+        for r in reversed(rows):
+            lines.append(StepLogLine(level=r.level, message=r.message[:4000]))
+    return StepLogs(step_execution_id=se.id, execution_id=se.execution_id, status=se.status, message=se.message, lines=lines)

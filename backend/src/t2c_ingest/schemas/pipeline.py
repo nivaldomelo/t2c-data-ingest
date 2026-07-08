@@ -126,3 +126,52 @@ class PipelineExecutionOut(BaseModel):
 
 class PipelineExecutionDetailOut(PipelineExecutionOut):
     steps: list[PipelineStepExecutionOut] = Field(default_factory=list)
+
+
+# ── Live graph status (for the builder in "acompanhamento" mode) ──
+class GraphStatusNode(BaseModel):
+    step_id: int
+    step_key: str | None = None
+    job_id: int
+    status: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_seconds: int | None = None
+    message: str | None = None
+
+
+class GraphStatusEdge(BaseModel):
+    source_step_id: int
+    target_step_id: int
+    status: str  # waiting | released | success | blocked | skipped
+
+
+class GraphStatus(BaseModel):
+    pipeline_execution_id: int
+    pipeline_id: int
+    status: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    nodes: list[GraphStatusNode] = Field(default_factory=list)
+    edges: list[GraphStatusEdge] = Field(default_factory=list)
+
+
+class TimelineEvent(BaseModel):
+    time: datetime
+    step_id: int
+    job_id: int
+    event: str  # iniciado | sucesso | erro | ignorado | ...
+    status: str
+
+
+class StepLogLine(BaseModel):
+    level: str
+    message: str
+
+
+class StepLogs(BaseModel):
+    step_execution_id: int
+    execution_id: int | None = None
+    status: str
+    message: str | None = None
+    lines: list[StepLogLine] = Field(default_factory=list)
