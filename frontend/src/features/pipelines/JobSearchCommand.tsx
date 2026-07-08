@@ -12,6 +12,7 @@ export interface JobSearchResult {
   job_type: string;
   engine: string | null;
   active: boolean;
+  tags?: { id: number; name: string; slug: string; color: string | null }[];
 }
 
 /** Command-palette style autocomplete to add a job to the pipeline canvas. */
@@ -99,6 +100,11 @@ export function JobSearchCommand({
                       <span className={j.active ? "text-emerald-600" : "text-gray-400"}>· {j.active ? "ativo" : "inativo"}</span>
                     </div>
                     {j.description && <div className="truncate text-[11px] text-gray-400">{j.description}</div>}
+                    {j.tags && j.tags.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {j.tags.slice(0, 5).map((t) => <span key={t.id} className="rounded bg-gray-100 px-1 py-0.5 text-[10px] text-gray-600">{t.name}</span>)}
+                      </div>
+                    )}
                   </div>
                 </button>
               );

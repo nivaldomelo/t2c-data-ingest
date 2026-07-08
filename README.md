@@ -313,6 +313,30 @@ Auditoria: `VARIABLE_CREATED/UPDATED/DELETED/ACTIVATED/DEACTIVATED/SECRET_UPDATE
 > **Boas práticas:** não coloque senha/token no código. Use **Conexões** para bancos e
 > **Variáveis** para parâmetros de execução (datas, buckets, flags, limites).
 
+## Tags
+
+Tags organizam e facilitam a busca de jobs (estrutura normalizada `t2c_data_ingest.tags` +
+`t2c_data_ingest.job_tags`). Um job pode ter várias tags; tags não são obrigatórias.
+
+- **Tela Tags** (menu): listar/criar/editar/ativar-inativar/remover (remoção só se não estiver
+  em uso), com contagem de jobs por tag. O **slug** é gerado do nome (acentos transliterados:
+  `produção → producao`, `massa_teste → massa-teste`).
+- **No job**: badges na **lista** (coluna Tags, com `+N`) e na **Visão geral**; edição na aba
+  **Configurações** (autocomplete que cria tag ao digitar + Enter). `PUT /jobs/{id}/tags`
+  aceita `{"tags":[...]}` — cria as inexistentes, sincroniza e remove vínculos ausentes.
+- **Busca/filtro**: filtro por tags na lista (`GET /jobs?tags=spark,massa_teste`), e a busca do
+  **Pipeline Builder** casa por nome, descrição **e tags** (`GET /jobs/search?search=&tags=`),
+  exibindo as tags nos resultados.
+
+Endpoints: `GET/POST /api/v1/tags`, `GET/PUT/DELETE /api/v1/tags/{id}`,
+`POST /api/v1/tags/{id}/{activate,deactivate}`, `GET/PUT /api/v1/jobs/{id}/tags`.
+Permissões: `ingest:tags:read` (todos), `:write` (admin, editor), `:delete` (admin),
+`ingest:jobs:tags:write` (admin, editor). Auditoria: `TAG_*` e `JOB_TAGS_UPDATED`.
+Seed inicial: `docker compose exec api python scripts/seed_tags.py`.
+
+**Boas práticas:** tags curtas (`spark`, `mysql`, `postgres`, `incremental`, `bronze`,
+`silver`, `gold`, `financeiro`); evite duplicidades conceituais (`postgres`/`postgresql`/`pg`).
+
 ## Permissões (`ingest:*`)
 
 Derivadas dos perfis existentes do t2c_data, sem conceder privilégio administrativo indevido:

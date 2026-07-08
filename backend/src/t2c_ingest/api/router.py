@@ -12,6 +12,7 @@ from t2c_ingest.features.jobs.router import router as jobs_router
 from t2c_ingest.features.pipelines.router import router as pipelines_router
 from t2c_ingest.features.pipelines.router import pe_router as pipeline_executions_router
 from t2c_ingest.features.schedules.router import router as schedules_router
+from t2c_ingest.features.tags.router import router as tags_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router)
@@ -25,4 +26,5 @@ api_router.include_router(schedules_router)
 api_router.include_router(executions_router)
 api_router.include_router(ingestion_control_router)
 api_router.include_router(variables_router)
+api_router.include_router(tags_router)
 api_router.include_router(airflow_router)

@@ -1,4 +1,10 @@
-import { Card } from "@/components/ui";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { api } from "@/lib/api";
+import { Card, PrimaryButton } from "@/components/ui";
+import { TagInput } from "@/features/tags/TagInput";
+import { useAuth } from "@/lib/auth";
 import type { JobDetail } from "@/features/jobs/types";
 
 function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
@@ -13,9 +19,29 @@ function Row({ label, value, mono }: { label: string; value: React.ReactNode; mo
 export function JobSettingsTab({ job }: { job: JobDetail }) {
   const args = (job.arguments ?? []).map(String);
   const envKeys = Object.keys(job.env_vars ?? {});
+  const { can } = useAuth();
+  const qc = useQueryClient();
+  const canTags = can("ingest:jobs:tags:write");
+  const [tags, setTags] = useState<string[]>((job.tags ?? []).map((t) => t.name));
+  const [saved, setSaved] = useState(false);
+  const saveTags = useMutation({
+    mutationFn: () => api.put(`/api/v1/jobs/${job.id}/tags`, { tags }),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2500); qc.invalidateQueries({ queryKey: ["job", job.id] }); qc.invalidateQueries({ queryKey: ["jobs"] }); },
+  });
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <Card className="p-5 lg:col-span-2">
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">Tags</h2>
+        <TagInput value={tags} onChange={setTags} allowCreate={canTags} disabled={!canTags} placeholder="Adicionar tag e Enter…" />
+        {canTags && (
+          <div className="mt-3 flex items-center gap-3">
+            <PrimaryButton size="sm" loading={saveTags.isPending} onClick={() => saveTags.mutate()}>Salvar tags</PrimaryButton>
+            {saved && <span className="text-xs text-emerald-600">Tags salvas.</span>}
+          </div>
+        )}
+        {!canTags && <p className="mt-2 text-xs text-gray-400">Você não tem permissão para editar tags.</p>}
+      </Card>
       <Card className="p-5">
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Configuração</h2>
         <Row label="Tipo" value={job.type} />

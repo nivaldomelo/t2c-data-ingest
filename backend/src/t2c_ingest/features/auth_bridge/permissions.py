@@ -41,6 +41,11 @@ INGEST_PIPELINES_WRITE = "ingest:pipelines:write"
 INGEST_PIPELINES_DELETE = "ingest:pipelines:delete"
 INGEST_PIPELINES_RUN = "ingest:pipelines:run"
 INGEST_PIPELINES_BUILDER = "ingest:pipelines:builder"
+# Tags (job organization/search).
+INGEST_TAGS_READ = "ingest:tags:read"
+INGEST_TAGS_WRITE = "ingest:tags:write"
+INGEST_TAGS_DELETE = "ingest:tags:delete"
+INGEST_JOBS_TAGS_WRITE = "ingest:jobs:tags:write"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -77,6 +82,10 @@ ALL_PERMISSIONS = {
     INGEST_PIPELINES_DELETE,
     INGEST_PIPELINES_RUN,
     INGEST_PIPELINES_BUILDER,
+    INGEST_TAGS_READ,
+    INGEST_TAGS_WRITE,
+    INGEST_TAGS_DELETE,
+    INGEST_JOBS_TAGS_WRITE,
 }
 
 # Mapping from t2c_data role -> ingest permissions.
@@ -118,6 +127,10 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_DELETE,
         INGEST_PIPELINES_RUN,
         INGEST_PIPELINES_BUILDER,
+        INGEST_TAGS_READ,
+        INGEST_TAGS_WRITE,
+        INGEST_TAGS_DELETE,
+        INGEST_JOBS_TAGS_WRITE,
     },
     "editor": {
         INGEST_READ,
@@ -145,6 +158,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_WRITE,
         INGEST_PIPELINES_RUN,
         INGEST_PIPELINES_BUILDER,
+        INGEST_TAGS_READ,
+        INGEST_TAGS_WRITE,
+        INGEST_JOBS_TAGS_WRITE,
     },
     "viewer": {
         INGEST_READ,
@@ -154,6 +170,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONTROL_READ,
         INGEST_VARIABLES_READ,
         INGEST_PIPELINES_READ,
+        INGEST_TAGS_READ,
     },
     "stewardship": {
         INGEST_READ,
@@ -164,6 +181,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONTROL_READ,
         INGEST_VARIABLES_READ,
         INGEST_PIPELINES_READ,
+        INGEST_TAGS_READ,
     },
     "data_owner": {
         INGEST_READ,
@@ -178,6 +196,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_VARIABLES_READ,
         INGEST_PIPELINES_READ,
         INGEST_PIPELINES_RUN,
+        INGEST_TAGS_READ,
     },
 }
 

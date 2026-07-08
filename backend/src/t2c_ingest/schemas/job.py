@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from t2c_ingest.models.job import JOB_TYPES
+from t2c_ingest.schemas.tag import TagLite
 
 
 class JobBase(BaseModel):
@@ -68,6 +69,7 @@ class JobOut(JobBase):
     updated_by: str | None = None
     created_at: datetime
     updated_at: datetime
+    tags: list[TagLite] = Field(default_factory=list)
 
 
 class JobDetailOut(JobOut):
@@ -112,6 +114,7 @@ class JobSearchOut(BaseModel):
     job_type: str
     engine: str | None = None
     active: bool
+    tags: list[TagLite] = Field(default_factory=list)
 
 
 class JobRunRequest(BaseModel):

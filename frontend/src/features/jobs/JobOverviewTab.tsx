@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Card, StatusBadge } from "@/components/ui";
+import { TagBadges } from "@/components/ui/TagBadges";
 import type { JobDetail } from "@/features/jobs/types";
 import { JOB_TYPE_LABEL, fmtDate, fmtDuration } from "@/features/jobs/types";
 
@@ -35,6 +36,9 @@ export function JobOverviewTab({ job }: { job: JobDetail }) {
           <Field label="Status">
             <StatusBadge status={job.is_active ? "active" : "inactive"} />
           </Field>
+          <div className="col-span-2">
+            <Field label="Tags"><TagBadges tags={job.tags ?? []} max={12} /></Field>
+          </div>
         </dl>
 
         <div className="mt-5 border-t border-gray-100 pt-4">

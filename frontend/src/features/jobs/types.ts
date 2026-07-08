@@ -21,6 +21,7 @@ export interface JobDetail {
   updated_by: string | null;
   created_at: string;
   updated_at: string;
+  tags: { id: number; name: string; slug: string; color: string | null }[];
   // enriched
   source_connection_name: string | null;
   target_connection_name: string | null;

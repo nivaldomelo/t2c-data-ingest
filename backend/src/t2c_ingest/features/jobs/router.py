@@ -19,10 +19,13 @@ from t2c_ingest.features.jobs.code_service import (
     read_job_code,
     write_job_code,
 )
+from t2c_ingest.features.tags.service import job_ids_with_tags, sync_job_tags, tags_for_jobs
 from t2c_ingest.models.connection import Connection
 from t2c_ingest.models.execution import Execution
 from t2c_ingest.models.job import JobDefinition
+from t2c_ingest.models.tag import JobTag, Tag
 from t2c_ingest.schemas.execution import ExecutionOut
+from t2c_ingest.schemas.tag import JobTagsUpdate, TagLite
 from t2c_ingest.features.schedules.manager import create_schedule, schedule_out
 from t2c_ingest.models.job_code_version import JobCodeVersion
 from t2c_ingest.models.schedule import JobSchedule
@@ -43,11 +46,22 @@ from t2c_ingest.services.execution_service import enqueue_job_execution
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
+def _job_out_with_tags(db: Session, jobs: list[JobDefinition]) -> list[JobOut]:
+    tags_map = tags_for_jobs(db, [j.id for j in jobs])
+    outs = []
+    for j in jobs:
+        o = JobOut.model_validate(j)
+        o.tags = [TagLite.model_validate(t) for t in tags_map.get(j.id, [])]
+        outs.append(o)
+    return outs
+
+
 @router.get("", response_model=PageOut[JobOut])
 def list_jobs(
     params: PageParams = Depends(),
     type: str | None = None,
     is_active: bool | None = None,
+    tags: str | None = Query(None, description="Slugs/nomes separados por vírgula"),
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
 ) -> PageOut[JobOut]:
@@ -59,16 +73,21 @@ def list_jobs(
     if is_active is not None:
         stmt = stmt.where(JobDefinition.is_active == is_active)
         count_stmt = count_stmt.where(JobDefinition.is_active == is_active)
+    if tags:
+        ids = job_ids_with_tags(db, tags.split(",")) or {-1}
+        stmt = stmt.where(JobDefinition.id.in_(ids))
+        count_stmt = count_stmt.where(JobDefinition.id.in_(ids))
     total = db.scalar(count_stmt) or 0
     rows = db.scalars(
         stmt.order_by(JobDefinition.name).offset(params.offset).limit(params.limit)
     ).all()
-    return PageOut.build([JobOut.model_validate(r) for r in rows], total, params)
+    return PageOut.build(_job_out_with_tags(db, rows), total, params)
 
 
 @router.get("/search", response_model=list[JobSearchOut])
 def search_jobs(
     search: str | None = None,
+    tags: str | None = Query(None, description="Slugs/nomes separados por vírgula"),
     job_type: str | None = None,
     engine: str | None = None,
     active: bool | None = None,
@@ -76,11 +95,24 @@ def search_jobs(
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
 ) -> list[JobSearchOut]:
-    """Autocomplete for the pipeline builder command palette."""
+    """Autocomplete for the pipeline builder command palette (matches name/description/tags)."""
     stmt = select(JobDefinition)
     if search:
         like = f"%{search.strip()}%"
-        stmt = stmt.where(or_(JobDefinition.name.ilike(like), JobDefinition.description.ilike(like)))
+        # Jobs whose name/description match, OR that carry a tag matching the term.
+        tag_job_ids = {
+            r[0]
+            for r in db.execute(
+                select(JobTag.job_id).join(Tag, Tag.id == JobTag.tag_id).where(or_(Tag.name.ilike(like), Tag.slug.ilike(like)))
+            ).all()
+        }
+        conds = [JobDefinition.name.ilike(like), JobDefinition.description.ilike(like)]
+        if tag_job_ids:
+            conds.append(JobDefinition.id.in_(tag_job_ids))
+        stmt = stmt.where(or_(*conds))
+    if tags:
+        ids = job_ids_with_tags(db, tags.split(",")) or {-1}
+        stmt = stmt.where(JobDefinition.id.in_(ids))
     if job_type:
         stmt = stmt.where(JobDefinition.type == job_type)
     if engine:
@@ -88,8 +120,10 @@ def search_jobs(
     if active is not None:
         stmt = stmt.where(JobDefinition.is_active == active)
     rows = db.scalars(stmt.order_by(JobDefinition.name).limit(limit)).all()
+    tags_map = tags_for_jobs(db, [j.id for j in rows])
     return [
-        JobSearchOut(id=j.id, name=j.name, description=j.description, job_type=j.type, engine=j.engine, active=j.is_active)
+        JobSearchOut(id=j.id, name=j.name, description=j.description, job_type=j.type, engine=j.engine, active=j.is_active,
+                     tags=[TagLite.model_validate(t) for t in tags_map.get(j.id, [])])
         for j in rows
     ]
 
@@ -163,7 +197,35 @@ def get_job(
         )
     )
     detail.avg_duration_seconds = float(avg) if avg is not None else None
+    detail.tags = [TagLite.model_validate(t) for t in tags_for_jobs(db, [job.id]).get(job.id, [])]
     return detail
+
+
+@router.get("/{job_id}/tags", response_model=list[TagLite])
+def get_job_tags(
+    job_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
+) -> list[TagLite]:
+    if not db.get(JobDefinition, job_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    return [TagLite.model_validate(t) for t in tags_for_jobs(db, [job_id]).get(job_id, [])]
+
+
+@router.put("/{job_id}/tags", response_model=list[TagLite])
+def put_job_tags(
+    job_id: int,
+    payload: JobTagsUpdate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_JOBS_TAGS_WRITE)),
+) -> list[TagLite]:
+    if not db.get(JobDefinition, job_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    final = sync_job_tags(db, job_id, payload.tags, user_id=user.id)
+    record_audit(db, action="JOB_TAGS_UPDATED", user=user, entity_type="job", entity_id=job_id,
+                 detail={"tags": [t.slug for t in final]})
+    db.commit()
+    return [TagLite.model_validate(t) for t in final]
 
 
 @router.patch("/{job_id}", response_model=JobOut)

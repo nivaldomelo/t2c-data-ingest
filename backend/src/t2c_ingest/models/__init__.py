@@ -26,3 +26,4 @@ from t2c_ingest.models.audit import AuditEvent  # noqa: F401
 from t2c_ingest.models.job_code_version import JobCodeVersion  # noqa: F401
 from t2c_ingest.models.schedule import JobSchedule, ScheduleRun  # noqa: F401
 from t2c_ingest.models.variable import JobVariable, Variable  # noqa: F401
+from t2c_ingest.models.tag import JobTag, Tag  # noqa: F401
