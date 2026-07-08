@@ -22,6 +22,7 @@ class JobBase(BaseModel):
     target_connection_id: int | None = None
     default_parameters: dict | None = None
     retry_count: int = 0
+    ingestion_control_id: int | None = None
     engine: str | None = None
     timeout_seconds: int | None = None
     is_active: bool = True
@@ -53,6 +54,7 @@ class JobUpdate(BaseModel):
     target_connection_id: int | None = None
     default_parameters: dict | None = None
     retry_count: int | None = None
+    ingestion_control_id: int | None = None
     engine: str | None = None
     timeout_seconds: int | None = None
     is_active: bool | None = None

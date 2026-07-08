@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     database_url: str
     db_schema: str = Field(default="t2c_data_ingest", validation_alias="INGEST_DB_SCHEMA")
     reference_schema: str = Field(default="t2c_data", validation_alias="REFERENCE_DB_SCHEMA")
+    # Operational control schema (ingestion parameters table lives here, not duplicated).
+    controle_schema: str = Field(default="controle", validation_alias="CONTROLE_DB_SCHEMA")
 
     # Shared with t2c_data so the same JWT validates in both products. MUST match the value
     # configured in the t2c_data backend.

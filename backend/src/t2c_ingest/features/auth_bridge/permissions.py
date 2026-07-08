@@ -25,6 +25,10 @@ INGEST_SCHEDULES_DELETE = "ingest:schedules:delete"
 INGEST_SCHEDULES_ENABLE = "ingest:schedules:enable"
 INGEST_SCHEDULES_DISABLE = "ingest:schedules:disable"
 INGEST_SCHEDULES_RUN = "ingest:schedules:run"
+# Ingestion control table (controle.t2c_data_controle_ingestao).
+INGEST_CONTROL_READ = "ingest:control:read"
+INGEST_CONTROL_WRITE = "ingest:control:write"
+INGEST_CONTROL_DELETE = "ingest:control:delete"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -48,6 +52,9 @@ ALL_PERMISSIONS = {
     INGEST_SCHEDULES_ENABLE,
     INGEST_SCHEDULES_DISABLE,
     INGEST_SCHEDULES_RUN,
+    INGEST_CONTROL_READ,
+    INGEST_CONTROL_WRITE,
+    INGEST_CONTROL_DELETE,
 }
 
 # Mapping from t2c_data role -> ingest permissions.
@@ -76,6 +83,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_SCHEDULES_ENABLE,
         INGEST_SCHEDULES_DISABLE,
         INGEST_SCHEDULES_RUN,
+        INGEST_CONTROL_READ,
+        INGEST_CONTROL_WRITE,
+        INGEST_CONTROL_DELETE,
     },
     "editor": {
         INGEST_READ,
@@ -94,12 +104,15 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_SCHEDULES_ENABLE,
         INGEST_SCHEDULES_DISABLE,
         INGEST_SCHEDULES_RUN,
+        INGEST_CONTROL_READ,
+        INGEST_CONTROL_WRITE,
     },
     "viewer": {
         INGEST_READ,
         INGEST_LOGS_READ,
         INGEST_CONNECTIONS_READ,
         INGEST_SCHEDULES_READ,
+        INGEST_CONTROL_READ,
     },
     "stewardship": {
         INGEST_READ,
@@ -107,6 +120,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONNECTIONS_READ,
         INGEST_JOBS_CODE_READ,
         INGEST_SCHEDULES_READ,
+        INGEST_CONTROL_READ,
     },
     "data_owner": {
         INGEST_READ,
@@ -117,6 +131,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_JOBS_CODE_READ,
         INGEST_SCHEDULES_READ,
         INGEST_SCHEDULES_RUN,
+        INGEST_CONTROL_READ,
     },
 }
 

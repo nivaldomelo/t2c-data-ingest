@@ -6,6 +6,7 @@ import LoginPage from "@/features/auth/LoginPage";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import ClustersPage from "@/features/clusters/ClustersPage";
 import ConnectionsPage from "@/features/connections/ConnectionsPage";
+import IngestionControlPage from "@/features/ingestion-control/IngestionControlPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import JobDetailPage from "@/features/jobs/JobDetailPage";
 import PipelinesPage from "@/features/pipelines/PipelinesPage";
@@ -39,6 +40,7 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/connections" element={<ConnectionsPage />} />
+        <Route path="/ingestion-control" element={<IngestionControlPage />} />
         <Route path="/clusters" element={<ClustersPage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:id" element={<JobDetailPage />} />

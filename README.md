@@ -249,6 +249,38 @@ Permissões: `ingest:schedules:read` (todos os perfis), `:write` (admin, editor)
 Exemplos de cron: `*/15 * * * *` (15 min), `0 * * * *` (de hora em hora), `0 8 * * 1-5`
 (seg–sex 08:00), `0 8-18 * * 1-5` (seg–sex, de hora em hora, 08–18h), `0 0 * * *` (meia-noite).
 
+## Controle de Ingestão
+
+Área administrativa para cadastrar os **parâmetros das tabelas** que serão processadas pelos
+jobs/pipelines. Os registros ficam em **`controle.t2c_data_controle_ingestao`** (schema
+`controle`, não duplicado no `t2c_data_ingest`). A migration cria o schema e a tabela de forma
+**não-destrutiva** (`IF NOT EXISTS`) — dados existentes são preservados.
+
+Cada registro descreve uma tabela a ingerir:
+- **Identificação:** `nome_tabela` (obrigatório), `grupo`, `tipo_tabela`, `ativo`, `observacao`.
+- **Origem/destino:** `origem` (MYSQL/POSTGRES/…), `destino` (BRONZE/SILVER/GOLD/…), `origem_id`
+  (id livre ou de uma **conexão cadastrada** — o form oferece um combo com as conexões).
+- **Estratégia:** `tipo_ingestao` (FULL/INCREMENTAL/CDC/D-1/MANUAL), `coluna_data`,
+  `coluna_ultima_alteracao`, `colunas_chave` (ex.: `id,order_id`), `watermark_atual`.
+- **Sensibilidade:** `dados_sensiveis` (ex.: `cpf,email,telefone`).
+- **Execução:** `status`, `ultima_execucao` (o scheduler/jobs atualizam no futuro).
+
+Como usar:
+- **Full:** defina `tipo_ingestao=FULL`; watermark não é necessário.
+- **Incremental:** `tipo_ingestao=INCREMENTAL` + `coluna_ultima_alteracao` (ou `coluna_data`) e,
+  quando houver histórico, `watermark_atual`; use `colunas_chave` para o merge/upsert.
+- **Ativar/inativar** controla se a tabela entra nas próximas ingestões.
+- Filtre/consulte por grupo, origem, destino, status, tipo e busca textual.
+
+Uso futuro: jobs e pipelines poderão referenciar um registro (campo opcional
+`ingestion_control_id` já disponível no job) para obter nome da tabela, origem/destino, tipo de
+ingestão, colunas de watermark/chave, dados sensíveis e status — sem hardcode no script.
+
+Endpoints: `GET/POST /api/v1/ingestion-control`, `GET/PUT/DELETE /api/v1/ingestion-control/{id}`,
+`POST /api/v1/ingestion-control/{id}/{activate,deactivate}`, `GET /api/v1/ingestion-control/summary`.
+Permissões: `ingest:control:read` (todos os perfis), `:write` (admin, editor), `:delete`
+(admin). Auditoria: `INGESTION_CONTROL_CREATED/UPDATED/DELETED/ACTIVATED/DEACTIVATED`.
+
 ## Permissões (`ingest:*`)
 
 Derivadas dos perfis existentes do t2c_data, sem conceder privilégio administrativo indevido:

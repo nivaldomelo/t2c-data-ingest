@@ -6,6 +6,7 @@ from t2c_ingest.features.clusters.router import router as clusters_router
 from t2c_ingest.features.connections.router import router as connections_router
 from t2c_ingest.features.dashboard.router import router as dashboard_router
 from t2c_ingest.features.executions.router import router as executions_router
+from t2c_ingest.features.ingestion_control.router import router as ingestion_control_router
 from t2c_ingest.features.jobs.router import router as jobs_router
 from t2c_ingest.features.pipelines.router import router as pipelines_router
 from t2c_ingest.features.schedules.router import router as schedules_router
@@ -19,4 +20,5 @@ api_router.include_router(jobs_router)
 api_router.include_router(pipelines_router)
 api_router.include_router(schedules_router)
 api_router.include_router(executions_router)
+api_router.include_router(ingestion_control_router)
 api_router.include_router(airflow_router)

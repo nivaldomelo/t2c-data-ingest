@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   Boxes,
   CalendarClock,
+  Database,
   LayoutDashboard,
   PlayCircle,
   Plug,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/cn";
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/connections", label: "Conexões", icon: Plug },
+  { to: "/ingestion-control", label: "Controle de Ingestão", icon: Database },
   { to: "/clusters", label: "Clusters", icon: Server },
   { to: "/jobs", label: "Jobs", icon: Boxes },
   { to: "/pipelines", label: "Pipelines", icon: Workflow },
