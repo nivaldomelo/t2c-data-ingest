@@ -6,6 +6,7 @@ import {
   Check,
   Copy,
   FileWarning,
+  FolderTree,
   Lock,
   RefreshCw,
   Save,
@@ -17,6 +18,7 @@ import { MONACO_LANGUAGE } from "@/lib/monaco-setup";
 import { cn } from "@/lib/cn";
 import { EmptyState } from "@/components/ui";
 import { Skeleton } from "@/components/ui/LoadingSkeleton";
+import { JobCodeWorkspaceModal } from "@/features/jobs/JobCodeWorkspaceModal";
 
 interface JobCode {
   job_id: number;
@@ -57,6 +59,7 @@ export function JobCodeEditor({ jobId }: { jobId: number }) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
   // Seed local state whenever fresh data arrives.
   useEffect(() => {
@@ -213,6 +216,9 @@ export function JobCodeEditor({ jobId }: { jobId: number }) {
             <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-slate-300">
               {LANG_LABEL[data.language] ?? data.language}
             </span>
+            <button onClick={() => setWorkspaceOpen(true)} className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-200 transition-colors hover:bg-white/20 hover:text-white">
+              <FolderTree size={14} /> Abrir workspace
+            </button>
             <button onClick={handleReload} disabled={isFetching} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50">
               <RefreshCw size={14} className={isFetching ? "animate-spin" : ""} /> Recarregar
             </button>
@@ -255,6 +261,15 @@ export function JobCodeEditor({ jobId }: { jobId: number }) {
           loading={<div className="p-6 text-sm text-slate-400">Carregando editor…</div>}
         />
       </div>
+
+      <JobCodeWorkspaceModal
+        jobId={jobId}
+        open={workspaceOpen}
+        onClose={() => {
+          setWorkspaceOpen(false);
+          void handleReload();
+        }}
+      />
     </div>
   );
 }

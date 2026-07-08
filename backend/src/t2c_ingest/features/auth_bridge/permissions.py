@@ -18,6 +18,9 @@ INGEST_CONNECTIONS_DELETE = "ingest:connections:delete"
 # Reading / editing a job's source code (potentially sensitive).
 INGEST_JOBS_CODE_READ = "ingest:jobs:code:read"
 INGEST_JOBS_CODE_WRITE = "ingest:jobs:code:write"
+INGEST_JOBS_CODE_CREATE = "ingest:jobs:code:create"
+INGEST_JOBS_CODE_DELETE = "ingest:jobs:code:delete"
+INGEST_JOBS_CODE_RENAME = "ingest:jobs:code:rename"
 # Job schedules (automatic execution).
 INGEST_SCHEDULES_READ = "ingest:schedules:read"
 INGEST_SCHEDULES_WRITE = "ingest:schedules:write"
@@ -63,6 +66,9 @@ ALL_PERMISSIONS = {
     INGEST_CONNECTIONS_DELETE,
     INGEST_JOBS_CODE_READ,
     INGEST_JOBS_CODE_WRITE,
+    INGEST_JOBS_CODE_CREATE,
+    INGEST_JOBS_CODE_DELETE,
+    INGEST_JOBS_CODE_RENAME,
     INGEST_SCHEDULES_READ,
     INGEST_SCHEDULES_WRITE,
     INGEST_SCHEDULES_DELETE,
@@ -108,6 +114,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONNECTIONS_DELETE,
         INGEST_JOBS_CODE_READ,
         INGEST_JOBS_CODE_WRITE,
+        INGEST_JOBS_CODE_CREATE,
+        INGEST_JOBS_CODE_DELETE,
+        INGEST_JOBS_CODE_RENAME,
         INGEST_SCHEDULES_READ,
         INGEST_SCHEDULES_WRITE,
         INGEST_SCHEDULES_DELETE,
@@ -144,6 +153,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONNECTIONS_TEST,
         INGEST_JOBS_CODE_READ,
         INGEST_JOBS_CODE_WRITE,
+        INGEST_JOBS_CODE_CREATE,
+        INGEST_JOBS_CODE_DELETE,
+        INGEST_JOBS_CODE_RENAME,
         INGEST_SCHEDULES_READ,
         INGEST_SCHEDULES_WRITE,
         INGEST_SCHEDULES_ENABLE,

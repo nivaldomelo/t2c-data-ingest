@@ -171,8 +171,34 @@ Recarregue o código antes de salvar."*
 
 **Segurança de caminho.** O backend só serve/edita arquivos **dentro dos diretórios permitidos**
 (`ALLOWED_SCRIPT_DIRS`, padrão `/opt/t2c/spark/jobs`, `/opt/t2c/python_jobs`, `/opt/spark/jobs`,
-`/app/jobs`). O caminho é resolvido com `realpath` — path traversal (`../`), caminhos fora da
-allowlist (`/etc/passwd`) e arquivos inexistentes retornam erro amigável.
+`/app/jobs`, `/opt/t2c/jobs/workspaces`). O caminho é resolvido com `realpath` — path traversal
+(`../`), **caminhos absolutos** (`/etc/passwd`) e caminhos fora da allowlist retornam erro
+amigável; a pasta raiz do job nunca pode ser renomeada/excluída.
+
+### Workspace de código (estilo VS Code)
+
+Pelo botão **Abrir workspace** (aba **Código**) abre-se um modal grande (95vw × 90vh) com a
+experiência de um editor multi-arquivo:
+
+- **Explorador de arquivos** à esquerda: árvore do workspace do job com pastas expansíveis,
+  criar arquivo/pasta, renomear e excluir (ações no hover). O workspace é a pasta do script do
+  job quando ela está numa allowlist; caso contrário, uma pasta por job em
+  `JOB_WORKSPACES_DIR` (padrão `/opt/t2c/jobs/workspaces/{id}`, montada de `./workspaces`),
+  criada automaticamente com `main.py`, `utils/` e `README.md`.
+- **Abas** de arquivos abertos com indicador de não salvo e fechar por aba; **Ctrl/Cmd+S** salva
+  a aba ativa; barra de status com job, arquivo, tamanho e última modificação.
+- **Endpoints:** `GET workspace/tree`, `GET/PUT/POST/DELETE workspace/file`,
+  `POST/DELETE workspace/folder`, `PUT workspace/rename` (prefixo `/api/v1/jobs/{id}`).
+- **Permissões:** `code:read` (ver/abrir), `code:write` (salvar), `code:create` (novo
+  arquivo/pasta), `code:delete` (excluir), `code:rename` (renomear). Sem `code:write`, o
+  workspace abre em somente leitura.
+- **Extensões editáveis:** `.py .sql .sh .json .yaml .yml .md .txt`; sensíveis/binárias
+  (`.env .pem .key .crt .p12 .jks .properties .ini .exe .jar .zip …`) são bloqueadas.
+- **Backups + histórico + auditoria:** toda escrita/renomeação/exclusão faz backup em
+  `JOB_CODE_BACKUP_DIR/{job_id}/` e grava uma linha em `job_code_versions` (com `action` e
+  `file_path`) e um evento (`JOB_CODE_FILE_CREATED/UPDATED/RENAMED/DELETED`,
+  `JOB_CODE_FOLDER_CREATED/DELETED`) — **sem** registrar o conteúdo do arquivo. O controle de
+  conflito (`expected_last_modified_at`) e o alerta de credenciais valem também aqui.
 
 **Boas práticas:** nunca coloque senhas/tokens no código. Use as **Conexões** cadastradas
 (resolvidas em tempo de execução) ou variáveis de ambiente seguras — o editor alerta ao detectar
