@@ -141,6 +141,34 @@ Clique no nome de um job (ou em **Ver detalhes**) para abrir `/jobs/{id}`, com a
 Endpoints: `GET /api/v1/jobs/{id}`, `GET /api/v1/jobs/{id}/executions`
 (`page,page_size,status,date_from,date_to,user_id,search`), `GET /api/v1/jobs/{id}/code`.
 
+### Detalhe da execução (tela operacional)
+
+`/executions/{id}` é uma tela em blocos, pensada para análise operacional:
+
+- **Header** — nome, badge de status (Sucesso/Falha/Em execução…), `#id · Job|Pipeline ·
+  tipo · engine`, gatilho (Manual/Agendamento/Pipeline/API/Retry) e início. Ações: **Copiar
+  ID**, **Copiar logs**, **Abrir job**, **Abrir pipeline** e **Execução do pipeline** (quando
+  veio de pipeline), **Reexecutar** (se permitido) e **Cancelar** (enquanto em execução).
+- **Cards de resumo** — Status, Engine, Duração, Disparado por, **Lidos** e **Gravados**.
+- **Linha do tempo** — Enfileirado / Início / Fim / Duração (com bloco de origem do
+  agendamento ou do **pipeline**: pipeline, step e ordem).
+- **Origem e destino** — conexões usadas (nome, tipo, host:porta/database e status do teste),
+  **sem expor senhas**.
+- **Resumo da ingestão** — interpreta a linha `INGEST_SUMMARY` (tabela, tipo, coluna
+  incremental, watermarks, lidos/gravados, status). `watermark_novo=None` vira “watermark
+  mantido”; linhas truncadas não quebram a tela.
+- **Logs da execução** — viewer estilo terminal (fundo escuro, monoespaçado, altura mínima de
+  500px) com **busca**, **quebra de linha**, **numeração**, **copiar**, **baixar**, **tela
+  cheia** e destaque por conteúdo (OK/erro/warning/`spark-submit`/`INGEST_SUMMARY`).
+
+Estados: sucesso com `lidos=0`/`gravados=0` mostra aviso informativo (não é erro); falha exibe
+card de erro com mensagem, trace e **Copiar erro**; execução em andamento atualiza a cada 3s.
+
+O backend enriquece `GET /api/v1/executions/{id}` com `execution_type`, `source_connection`,
+`target_connection`, `ingest_summary`, `records_read/written` e o vínculo de pipeline
+(`pipeline_name`, `pipeline_execution_id`, `step_name`, `step_order`) — parseados dos logs de
+forma tolerante quando ainda não persistidos, sem alterar execuções antigas.
+
 ### Editor de código (visualizar, editar e salvar)
 
 A aba **Código** é um editor Monaco (mesma base do VS Code): tema escuro, syntax highlight,
