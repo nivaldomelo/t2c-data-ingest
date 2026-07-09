@@ -21,17 +21,34 @@ def main() -> None:
     with SessionLocal() as db:
         existing = db.scalar(select(Cluster).where(Cluster.name == "Spark Local Docker"))
         if existing:
-            print("Cluster 'Spark Local Docker' already exists — nothing to do.")
+            changed = False
+            if existing.expected_workers != settings.spark_expected_workers:
+                existing.expected_workers = settings.spark_expected_workers
+                changed = True
+            if not existing.environment:
+                existing.environment = "local"
+                changed = True
+            if not existing.runtime_image:
+                existing.runtime_image = "t2c-data-ingest-spark-runtime:local"
+                changed = True
+            if changed:
+                db.commit()
+                print("Cluster 'Spark Local Docker' updated (expected_workers/environment/runtime_image).")
+            else:
+                print("Cluster 'Spark Local Docker' already up to date — nothing to do.")
             return
         cluster = Cluster(
             name="Spark Local Docker",
-            description="Local Spark cluster running in docker-compose (master + worker).",
+            description="Local Spark cluster running in docker-compose (master + 3 workers).",
             type="local_docker",
             spark_master_url=settings.spark_master_url,
             status="active",
-            worker_count=1,
-            total_cores=2,
-            total_memory="2G",
+            worker_count=3,
+            total_cores=3,
+            total_memory="3G",
+            expected_workers=settings.spark_expected_workers,
+            environment="local",
+            runtime_image="t2c-data-ingest-spark-runtime:local",
             is_active=True,
             created_by="system",
         )

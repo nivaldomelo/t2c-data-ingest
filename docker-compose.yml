@@ -24,14 +24,48 @@ services:
       - ./spark/data:/data
     networks: [t2c]
 
-  spark-worker:
+  # Three workers so distributed execution can be exercised locally (like K8s executors).
+  # All workers use the SAME image so libraries/jobs baked into it are identical everywhere.
+  # 1 core each + spreadOut (Spark default) => one executor per worker => real distribution.
+  spark-worker-1:
     build: ./spark
+    image: t2c-data-ingest-spark-runtime:local
     hostname: spark-worker-1
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--cores", "2", "--memory", "2G", "--webui-port", "8081"]
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--cores", "1", "--memory", "1G", "--webui-port", "8081"]
     ports:
       - "8091:8081"
     volumes:
       - ./spark/data:/data
+      - ./spark/jobs:/opt/t2c/spark/jobs
+      - ./python_jobs:/opt/t2c/python_jobs
+    depends_on: [spark-master]
+    networks: [t2c]
+
+  spark-worker-2:
+    build: ./spark
+    image: t2c-data-ingest-spark-runtime:local
+    hostname: spark-worker-2
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--cores", "1", "--memory", "1G", "--webui-port", "8081"]
+    ports:
+      - "8092:8081"
+    volumes:
+      - ./spark/data:/data
+      - ./spark/jobs:/opt/t2c/spark/jobs
+      - ./python_jobs:/opt/t2c/python_jobs
+    depends_on: [spark-master]
+    networks: [t2c]
+
+  spark-worker-3:
+    build: ./spark
+    image: t2c-data-ingest-spark-runtime:local
+    hostname: spark-worker-3
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--cores", "1", "--memory", "1G", "--webui-port", "8081"]
+    ports:
+      - "8093:8081"
+    volumes:
+      - ./spark/data:/data
+      - ./spark/jobs:/opt/t2c/spark/jobs
+      - ./python_jobs:/opt/t2c/python_jobs
     depends_on: [spark-master]
     networks: [t2c]
 
@@ -59,6 +93,7 @@ services:
       - ./spark/jars:/app/jars
       - ./python_jobs:/opt/t2c/python_jobs
       - ./backups:/opt/t2c/backups
+      - ./archive:/opt/t2c/jobs/archive
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on: [spark-master]
@@ -70,6 +105,9 @@ services:
       dockerfile: Dockerfile
     hostname: t2c_data_ingest_worker
     command: ["python", "scripts/run_worker.py"]
+    # Root + Docker socket so the worker can build runtime images and run cluster validation
+    # against the host Docker daemon (dev only). In K8s this becomes a build/CI step.
+    user: "0:0"
     env_file: [./backend/.env]
     environment:
       ENV: dev
@@ -77,12 +115,19 @@ services:
       # Driver host reachable by the spark workers (service name, no underscores).
       SPARK_DRIVER_HOST: worker
       SPARK_DRIVER_BIND_ADDRESS: 0.0.0.0
+      # Runtime image build/validation settings.
+      RUNTIME_BUILD_CONTEXT_DIR: /opt/t2c/runtime/builds
+      RUNTIME_SPARK_SUBMIT_CONTAINER: t2c-data-ingest-spark-worker-1-1
+      SPARK_EXPECTED_WORKERS: "3"
     volumes:
       - ./spark/data:/data
       - ./spark/jobs:/opt/spark/jobs
       - ./spark:/opt/t2c/spark
       - ./spark/jars:/app/jars
       - ./python_jobs:/opt/t2c/python_jobs
+      - ./archive:/opt/t2c/jobs/archive
+      - ./runtime-builds:/opt/t2c/runtime/builds
+      - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on: [api, spark-master]

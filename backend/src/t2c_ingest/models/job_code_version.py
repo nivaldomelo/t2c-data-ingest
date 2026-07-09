@@ -19,6 +19,9 @@ class JobCodeVersion(Base):
         ForeignKey("job_definitions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     script_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    # created | updated | renamed | deleted | folder_created | folder_deleted
+    action: Mapped[str | None] = mapped_column(String(30))
+    file_path: Mapped[str | None] = mapped_column(String(700))
     backup_path: Mapped[str | None] = mapped_column(String(700))
     content_hash_before: Mapped[str | None] = mapped_column(String(64))
     content_hash_after: Mapped[str | None] = mapped_column(String(64))

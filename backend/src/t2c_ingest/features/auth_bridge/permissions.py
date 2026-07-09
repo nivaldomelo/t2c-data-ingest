@@ -9,15 +9,24 @@ INGEST_ADMIN = "ingest:admin"
 INGEST_LOGS_READ = "ingest:logs:read"
 INGEST_CLUSTERS_READ = "ingest:clusters:read"
 INGEST_CLUSTERS_MANAGE = "ingest:clusters:manage"
+INGEST_CLUSTERS_TEST = "ingest:clusters:test"
+INGEST_CLUSTERS_VALIDATE = "ingest:clusters:validate"
 INGEST_AIRFLOW_READ = "ingest:airflow:read"
 INGEST_AIRFLOW_MIGRATE = "ingest:airflow:migrate"
 INGEST_CONNECTIONS_READ = "ingest:connections:read"
 INGEST_CONNECTIONS_WRITE = "ingest:connections:write"
 INGEST_CONNECTIONS_TEST = "ingest:connections:test"
 INGEST_CONNECTIONS_DELETE = "ingest:connections:delete"
+# Creating a job (admin/editor).
+INGEST_JOBS_CREATE = "ingest:jobs:create"
+# Deleting a job (soft delete + code archival). Reserved to admins in this version.
+INGEST_JOBS_DELETE = "ingest:jobs:delete"
 # Reading / editing a job's source code (potentially sensitive).
 INGEST_JOBS_CODE_READ = "ingest:jobs:code:read"
 INGEST_JOBS_CODE_WRITE = "ingest:jobs:code:write"
+INGEST_JOBS_CODE_CREATE = "ingest:jobs:code:create"
+INGEST_JOBS_CODE_DELETE = "ingest:jobs:code:delete"
+INGEST_JOBS_CODE_RENAME = "ingest:jobs:code:rename"
 # Job schedules (automatic execution).
 INGEST_SCHEDULES_READ = "ingest:schedules:read"
 INGEST_SCHEDULES_WRITE = "ingest:schedules:write"
@@ -35,6 +44,28 @@ INGEST_VARIABLES_WRITE = "ingest:variables:write"
 INGEST_VARIABLES_DELETE = "ingest:variables:delete"
 INGEST_VARIABLES_SECRET_READ = "ingest:variables:secret:read"
 INGEST_VARIABLES_SECRET_WRITE = "ingest:variables:secret:write"
+# Pipelines (visual builder + execution).
+INGEST_PIPELINES_READ = "ingest:pipelines:read"
+INGEST_PIPELINES_WRITE = "ingest:pipelines:write"
+INGEST_PIPELINES_DELETE = "ingest:pipelines:delete"
+INGEST_PIPELINES_RUN = "ingest:pipelines:run"
+INGEST_PIPELINES_BUILDER = "ingest:pipelines:builder"
+# Cluster libraries (managed pip packages).
+INGEST_LIBRARIES_READ = "ingest:libraries:read"
+INGEST_LIBRARIES_INSTALL = "ingest:libraries:install"
+INGEST_LIBRARIES_UNINSTALL = "ingest:libraries:uninstall"
+INGEST_LIBRARIES_MANAGE = "ingest:libraries:manage"
+# Runtime environment (managed image: libraries manifest + builds + cluster validation).
+INGEST_RUNTIME_READ = "ingest:runtime:read"
+INGEST_RUNTIME_LIBRARIES_WRITE = "ingest:runtime:libraries:write"
+INGEST_RUNTIME_BUILD = "ingest:runtime:build"
+INGEST_RUNTIME_ACTIVATE = "ingest:runtime:activate"
+INGEST_RUNTIME_VALIDATE = "ingest:runtime:validate"
+# Tags (job organization/search).
+INGEST_TAGS_READ = "ingest:tags:read"
+INGEST_TAGS_WRITE = "ingest:tags:write"
+INGEST_TAGS_DELETE = "ingest:tags:delete"
+INGEST_JOBS_TAGS_WRITE = "ingest:jobs:tags:write"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -44,14 +75,21 @@ ALL_PERMISSIONS = {
     INGEST_LOGS_READ,
     INGEST_CLUSTERS_READ,
     INGEST_CLUSTERS_MANAGE,
+    INGEST_CLUSTERS_TEST,
+    INGEST_CLUSTERS_VALIDATE,
     INGEST_AIRFLOW_READ,
     INGEST_AIRFLOW_MIGRATE,
     INGEST_CONNECTIONS_READ,
     INGEST_CONNECTIONS_WRITE,
     INGEST_CONNECTIONS_TEST,
     INGEST_CONNECTIONS_DELETE,
+    INGEST_JOBS_CREATE,
+    INGEST_JOBS_DELETE,
     INGEST_JOBS_CODE_READ,
     INGEST_JOBS_CODE_WRITE,
+    INGEST_JOBS_CODE_CREATE,
+    INGEST_JOBS_CODE_DELETE,
+    INGEST_JOBS_CODE_RENAME,
     INGEST_SCHEDULES_READ,
     INGEST_SCHEDULES_WRITE,
     INGEST_SCHEDULES_DELETE,
@@ -66,6 +104,24 @@ ALL_PERMISSIONS = {
     INGEST_VARIABLES_DELETE,
     INGEST_VARIABLES_SECRET_READ,
     INGEST_VARIABLES_SECRET_WRITE,
+    INGEST_PIPELINES_READ,
+    INGEST_PIPELINES_WRITE,
+    INGEST_PIPELINES_DELETE,
+    INGEST_PIPELINES_RUN,
+    INGEST_PIPELINES_BUILDER,
+    INGEST_LIBRARIES_READ,
+    INGEST_LIBRARIES_INSTALL,
+    INGEST_LIBRARIES_UNINSTALL,
+    INGEST_LIBRARIES_MANAGE,
+    INGEST_RUNTIME_READ,
+    INGEST_RUNTIME_LIBRARIES_WRITE,
+    INGEST_RUNTIME_BUILD,
+    INGEST_RUNTIME_ACTIVATE,
+    INGEST_RUNTIME_VALIDATE,
+    INGEST_TAGS_READ,
+    INGEST_TAGS_WRITE,
+    INGEST_TAGS_DELETE,
+    INGEST_JOBS_TAGS_WRITE,
 }
 
 # Mapping from t2c_data role -> ingest permissions.
@@ -80,14 +136,21 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_LOGS_READ,
         INGEST_CLUSTERS_READ,
         INGEST_CLUSTERS_MANAGE,
+        INGEST_CLUSTERS_TEST,
+        INGEST_CLUSTERS_VALIDATE,
         INGEST_AIRFLOW_READ,
         INGEST_AIRFLOW_MIGRATE,
         INGEST_CONNECTIONS_READ,
         INGEST_CONNECTIONS_WRITE,
         INGEST_CONNECTIONS_TEST,
         INGEST_CONNECTIONS_DELETE,
+        INGEST_JOBS_CREATE,
+        INGEST_JOBS_DELETE,
         INGEST_JOBS_CODE_READ,
         INGEST_JOBS_CODE_WRITE,
+        INGEST_JOBS_CODE_CREATE,
+        INGEST_JOBS_CODE_DELETE,
+        INGEST_JOBS_CODE_RENAME,
         INGEST_SCHEDULES_READ,
         INGEST_SCHEDULES_WRITE,
         INGEST_SCHEDULES_DELETE,
@@ -102,6 +165,24 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_VARIABLES_DELETE,
         INGEST_VARIABLES_SECRET_READ,
         INGEST_VARIABLES_SECRET_WRITE,
+        INGEST_PIPELINES_READ,
+        INGEST_PIPELINES_WRITE,
+        INGEST_PIPELINES_DELETE,
+        INGEST_PIPELINES_RUN,
+        INGEST_PIPELINES_BUILDER,
+        INGEST_LIBRARIES_READ,
+        INGEST_LIBRARIES_INSTALL,
+        INGEST_LIBRARIES_UNINSTALL,
+        INGEST_LIBRARIES_MANAGE,
+        INGEST_RUNTIME_READ,
+        INGEST_RUNTIME_LIBRARIES_WRITE,
+        INGEST_RUNTIME_BUILD,
+        INGEST_RUNTIME_ACTIVATE,
+        INGEST_RUNTIME_VALIDATE,
+        INGEST_TAGS_READ,
+        INGEST_TAGS_WRITE,
+        INGEST_TAGS_DELETE,
+        INGEST_JOBS_TAGS_WRITE,
     },
     "editor": {
         INGEST_READ,
@@ -109,12 +190,18 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUN,
         INGEST_LOGS_READ,
         INGEST_CLUSTERS_READ,
+        INGEST_CLUSTERS_TEST,
+        INGEST_CLUSTERS_VALIDATE,
         INGEST_AIRFLOW_READ,
         INGEST_CONNECTIONS_READ,
         INGEST_CONNECTIONS_WRITE,
         INGEST_CONNECTIONS_TEST,
+        INGEST_JOBS_CREATE,
         INGEST_JOBS_CODE_READ,
         INGEST_JOBS_CODE_WRITE,
+        INGEST_JOBS_CODE_CREATE,
+        INGEST_JOBS_CODE_DELETE,
+        INGEST_JOBS_CODE_RENAME,
         INGEST_SCHEDULES_READ,
         INGEST_SCHEDULES_WRITE,
         INGEST_SCHEDULES_ENABLE,
@@ -125,28 +212,54 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_VARIABLES_READ,
         INGEST_VARIABLES_WRITE,
         INGEST_VARIABLES_SECRET_WRITE,
+        INGEST_PIPELINES_READ,
+        INGEST_PIPELINES_WRITE,
+        INGEST_PIPELINES_RUN,
+        INGEST_PIPELINES_BUILDER,
+        INGEST_LIBRARIES_READ,
+        INGEST_LIBRARIES_INSTALL,
+        INGEST_LIBRARIES_UNINSTALL,
+        INGEST_RUNTIME_READ,
+        INGEST_RUNTIME_LIBRARIES_WRITE,
+        INGEST_RUNTIME_BUILD,
+        INGEST_RUNTIME_VALIDATE,
+        INGEST_TAGS_READ,
+        INGEST_TAGS_WRITE,
+        INGEST_JOBS_TAGS_WRITE,
     },
     "viewer": {
         INGEST_READ,
         INGEST_LOGS_READ,
+        INGEST_CLUSTERS_READ,
         INGEST_CONNECTIONS_READ,
         INGEST_SCHEDULES_READ,
         INGEST_CONTROL_READ,
         INGEST_VARIABLES_READ,
+        INGEST_PIPELINES_READ,
+        INGEST_LIBRARIES_READ,
+        INGEST_RUNTIME_READ,
+        INGEST_TAGS_READ,
     },
     "stewardship": {
         INGEST_READ,
         INGEST_LOGS_READ,
+        INGEST_CLUSTERS_READ,
         INGEST_CONNECTIONS_READ,
         INGEST_JOBS_CODE_READ,
         INGEST_SCHEDULES_READ,
         INGEST_CONTROL_READ,
         INGEST_VARIABLES_READ,
+        INGEST_PIPELINES_READ,
+        INGEST_LIBRARIES_READ,
+        INGEST_RUNTIME_READ,
+        INGEST_TAGS_READ,
     },
     "data_owner": {
         INGEST_READ,
         INGEST_RUN,
         INGEST_LOGS_READ,
+        INGEST_CLUSTERS_READ,
+        INGEST_CLUSTERS_VALIDATE,
         INGEST_CONNECTIONS_READ,
         INGEST_CONNECTIONS_TEST,
         INGEST_JOBS_CODE_READ,
@@ -154,6 +267,12 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_SCHEDULES_RUN,
         INGEST_CONTROL_READ,
         INGEST_VARIABLES_READ,
+        INGEST_PIPELINES_READ,
+        INGEST_PIPELINES_RUN,
+        INGEST_LIBRARIES_READ,
+        INGEST_RUNTIME_READ,
+        INGEST_RUNTIME_VALIDATE,
+        INGEST_TAGS_READ,
     },
 }
 

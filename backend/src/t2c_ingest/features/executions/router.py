@@ -10,11 +10,14 @@ from t2c_ingest.core.db import get_db
 from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
 from t2c_ingest.features.auth_bridge import permissions as perms
+from t2c_ingest.features.executions.log_parser import parse_connections, parse_ingest_summary
 from t2c_ingest.models.execution import Execution, ExecutionLog
 from t2c_ingest.schemas.execution import (
+    ExecutionConnectionInfo,
     ExecutionDetailOut,
     ExecutionLogOut,
     ExecutionOut,
+    IngestSummaryOut,
 )
 from t2c_ingest.services.execution_service import cancel_execution
 
@@ -84,6 +87,7 @@ def get_execution(
     if not execution:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution not found")
     detail = ExecutionDetailOut.model_validate(execution)
+    detail.execution_type = execution.target_type
     if execution.schedule_id:
         from t2c_ingest.models.schedule import JobSchedule, ScheduleRun
 
@@ -98,7 +102,49 @@ def get_execution(
         if run:
             detail.scheduled_for = run.scheduled_for
             detail.triggered_at = run.triggered_at
+    _enrich_pipeline(db, execution, detail)
+    _enrich_from_logs(execution, detail)
     return detail
+
+
+def _enrich_pipeline(db: Session, execution: Execution, detail: ExecutionDetailOut) -> None:
+    """Resolve pipeline / step context for a job execution created by a pipeline run."""
+    from t2c_ingest.models.pipeline import PipelineDefinition, PipelineStep, PipelineStepExecution
+
+    step_exec = db.scalar(
+        select(PipelineStepExecution)
+        .where(PipelineStepExecution.execution_id == execution.id)
+        .order_by(PipelineStepExecution.id.desc())
+        .limit(1)
+    )
+    pipeline_id = execution.pipeline_id or (step_exec.pipeline_id if step_exec else None)
+    if step_exec:
+        detail.pipeline_execution_id = step_exec.pipeline_execution_id
+        step = db.get(PipelineStep, step_exec.step_id)
+        if step:
+            detail.step_name = step.label or step.name or step.step_key
+            detail.step_order = step.order_index
+    if pipeline_id:
+        detail.pipeline_id = pipeline_id
+        pipeline = db.get(PipelineDefinition, pipeline_id)
+        detail.pipeline_name = pipeline.name if pipeline else None
+
+
+def _enrich_from_logs(execution: Execution, detail: ExecutionDetailOut) -> None:
+    """Parse structured metadata (connections / ingest summary) from the raw logs."""
+    logs_text = "\n".join(log.message for log in execution.logs)
+    if not logs_text.strip():
+        return
+    source, target = parse_connections(logs_text)
+    if source:
+        detail.source_connection = ExecutionConnectionInfo(**source)
+    if target:
+        detail.target_connection = ExecutionConnectionInfo(**target)
+    summary = parse_ingest_summary(logs_text)
+    if summary:
+        detail.ingest_summary = IngestSummaryOut(**summary)
+        detail.records_read = summary.get("lidos") if isinstance(summary.get("lidos"), int) else detail.records_read
+        detail.records_written = summary.get("gravados") if isinstance(summary.get("gravados"), int) else detail.records_written
 
 
 @router.get("/{execution_id}/logs", response_model=PageOut[ExecutionLogOut])

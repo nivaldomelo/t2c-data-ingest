@@ -13,7 +13,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     postgresql-client \
     openjdk-21-jre-headless \
+    curl ca-certificates gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Docker CLI (client only) — lets the worker drive runtime image builds and cluster validation
+# against the host Docker daemon via the mounted socket. Best-effort: never fail the image build.
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && (curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+        && chmod a+r /etc/apt/keyrings/docker.asc \
+        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list \
+        && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
+        && rm -rf /var/lib/apt/lists/*) \
+    || echo "[build] docker-ce-cli indisponível; builds de runtime exigirão Docker no host"
 
 RUN groupadd --gid 1001 appuser && useradd --uid 1001 --gid 1001 --create-home appuser
 

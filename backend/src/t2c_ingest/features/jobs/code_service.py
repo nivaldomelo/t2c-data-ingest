@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 
@@ -68,6 +69,78 @@ def _validate_within_allowed(script_path: str) -> str:
         if real == allowed_real or real.startswith(allowed_real + os.sep):
             return real
     raise CodeError(403, "Acesso negado: o caminho do script está fora dos diretórios permitidos.")
+
+
+def assert_within_allowed(script_path: str) -> str:
+    """Public guard: ensure an (explicit) script path lives inside an allowed dir. Returns realpath."""
+    return _validate_within_allowed(script_path)
+
+
+# ── job code provisioning (every job is born versioned) ──────────────────────────────
+# Starter code + file extension per job type. New jobs get a real file under a git-tracked
+# directory so the code is committed to GitHub and deployed by CI/CD.
+_STARTER = {
+    "python": (
+        ".py",
+        'def main():\n    print("Iniciando job Python")\n\n\nif __name__ == "__main__":\n    main()\n',
+    ),
+    "spark_python": (
+        ".py",
+        'from pyspark.sql import SparkSession\n\n'
+        'spark = (\n    SparkSession.builder\n    .appName("{name}")\n    .getOrCreate()\n)\n\n'
+        'try:\n    print("Iniciando job Spark")\nfinally:\n    spark.stop()\n',
+    ),
+    "spark_submit": (
+        ".py",
+        'from pyspark.sql import SparkSession\n\n'
+        'spark = (\n    SparkSession.builder\n    .appName("{name}")\n    .getOrCreate()\n)\n\n'
+        'try:\n    print("Iniciando job spark-submit")\nfinally:\n    spark.stop()\n',
+    ),
+    "spark_sql": (
+        ".sql",
+        "-- {name}\n-- Job Spark SQL. Escreva sua consulta abaixo.\nSELECT 1;\n",
+    ),
+}
+
+
+def _slugify(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", (name or "").strip().lower()).strip("_")
+    return slug or "job"
+
+
+def base_dir_for(job_type: str | None) -> str:
+    """Git-tracked root where a job of this type is provisioned."""
+    if job_type == "python":
+        return settings.python_jobs_dir
+    return settings.spark_jobs_dir
+
+
+def provision_job_script(job_type: str | None, name: str, job_id: int) -> str:
+    """Create a per-job folder + starter file under a versioned dir; return its container path.
+
+    The folder is ``{base}/{slug}`` (``{slug}-{id}`` if the slug is already taken), keeping each
+    job's code isolated. Returns the file path (used as the job's ``script_path``)."""
+    ext, template = _STARTER.get(job_type or "", _STARTER["python"])
+    base = base_dir_for(job_type)
+    slug = _slugify(name)
+    folder = os.path.join(base, slug)
+    if os.path.exists(folder):
+        folder = os.path.join(base, f"{slug}-{job_id}")
+    os.makedirs(folder, exist_ok=True)
+    main_name = "main" + ext
+    script_path = os.path.join(folder, main_name)
+    if not os.path.exists(script_path):
+        with open(script_path, "w", encoding="utf-8") as fh:
+            fh.write(template.replace("{name}", name))
+        with open(os.path.join(folder, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write(f"# {name}\n\nCódigo do job (versionado no Git).\n")
+        # Starter structure: utils/ for both; sql/ for Spark jobs.
+        subdirs = ["utils"] + (["sql"] if (job_type or "").startswith("spark") else [])
+        for sub in subdirs:
+            os.makedirs(os.path.join(folder, sub), exist_ok=True)
+            with open(os.path.join(folder, sub, ".gitkeep"), "w", encoding="utf-8") as fh:
+                fh.write("")
+    return script_path
 
 
 def _iso_mtime(real: str) -> str:

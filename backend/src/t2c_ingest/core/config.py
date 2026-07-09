@@ -80,8 +80,22 @@ class Settings(BaseSettings):
     # Directories the job code viewer is allowed to read from (comma-separated). Any script
     # outside these (or path traversal) is rejected.
     allowed_script_dirs: str = Field(
-        default="/opt/t2c/spark/jobs,/opt/t2c/python_jobs,/opt/spark/jobs,/app/jobs",
+        default="/opt/t2c/spark/jobs,/opt/t2c/python_jobs,/opt/spark/jobs,/app/jobs,/opt/t2c/jobs/archive",
         validation_alias="ALLOWED_SCRIPT_DIRS",
+    )
+    # Where deleted jobs' code is archived before soft delete (inside the project, never
+    # hard-deleted). See features/jobs/archive_service.
+    job_archive_dir: str = Field(
+        default="/opt/t2c/jobs/archive", validation_alias="JOB_ARCHIVE_DIR"
+    )
+    # Versioned (git-tracked) roots where new jobs' code is provisioned, by engine. Every job's
+    # code lives here so it is committed to GitHub and shipped by CI/CD (K8s) — there is no
+    # unversioned scratch area.
+    spark_jobs_dir: str = Field(
+        default="/opt/t2c/spark/jobs", validation_alias="SPARK_JOBS_DIR"
+    )
+    python_jobs_dir: str = Field(
+        default="/opt/t2c/python_jobs", validation_alias="PYTHON_JOBS_DIR"
     )
 
     @property
@@ -101,6 +115,42 @@ class Settings(BaseSettings):
     job_code_backup_dir: str = Field(
         default="/opt/t2c/backups/job-code", validation_alias="JOB_CODE_BACKUP_DIR"
     )
+
+    # ── Cluster libraries (managed pip installs) ──
+    # Python interpreter used to run pip. Defaults to the worker's own interpreter (empty ->
+    # sys.executable at runtime). Point this at a venv (e.g. /opt/t2c/venvs/ingest/bin/python)
+    # to isolate installs later without code changes.
+    library_pip_python: str = Field(default="", validation_alias="LIBRARY_PIP_PYTHON")
+    # Install into the per-user site (~/.local) — required when the worker runs as non-root.
+    library_pip_user: bool = Field(default=True, validation_alias="LIBRARY_PIP_USER")
+    library_install_timeout: int = Field(default=600, validation_alias="LIBRARY_INSTALL_TIMEOUT")
+
+    # ── Cluster runtime image (libraries + jobs baked into a versioned image) ──
+    runtime_image_name: str = Field(default="t2c-data-ingest-spark-runtime", validation_alias="RUNTIME_IMAGE_NAME")
+    runtime_base_image: str = Field(default="apache/spark:3.5.1", validation_alias="RUNTIME_BASE_IMAGE")
+    # Where build contexts are written (mounted volume). The worker runs `docker build` here.
+    runtime_build_context_dir: str = Field(default="/opt/t2c/runtime/builds", validation_alias="RUNTIME_BUILD_CONTEXT_DIR")
+    runtime_build_timeout: int = Field(default=1800, validation_alias="RUNTIME_BUILD_TIMEOUT")
+    # A running Spark container the worker uses (via `docker exec`) to spark-submit validations,
+    # so the driver Python matches the executors (the runtime image). Empty disables docker exec.
+    runtime_spark_submit_container: str = Field(default="", validation_alias="RUNTIME_SPARK_SUBMIT_CONTAINER")
+    spark_expected_workers: int = Field(default=3, validation_alias="SPARK_EXPECTED_WORKERS")
+    # Applying an active image to the local cluster: retag to this tag (used by the worker
+    # services in docker-compose) and recreate these containers with the new image.
+    runtime_worker_image_tag: str = Field(
+        default="t2c-data-ingest-spark-runtime:local", validation_alias="RUNTIME_WORKER_IMAGE_TAG"
+    )
+    runtime_spark_worker_containers: str = Field(
+        default="t2c-data-ingest-spark-worker-1-1,t2c-data-ingest-spark-worker-2-1,t2c-data-ingest-spark-worker-3-1",
+        validation_alias="RUNTIME_SPARK_WORKER_CONTAINERS",
+    )
+    runtime_spark_master_webui: str = Field(
+        default="http://spark-master:8080", validation_alias="RUNTIME_SPARK_MASTER_WEBUI"
+    )
+
+    @property
+    def runtime_spark_worker_containers_list(self) -> list[str]:
+        return [c.strip() for c in self.runtime_spark_worker_containers.split(",") if c.strip()]
 
     @property
     def job_code_editable_extensions_set(self) -> set[str]:

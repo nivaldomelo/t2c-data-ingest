@@ -27,4 +27,11 @@ class Cluster(TimestampMixin, Base):
     total_memory: Mapped[str | None] = mapped_column(String(30))
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Runtime / validation bookkeeping (see features/clusters).
+    expected_workers: Mapped[int | None] = mapped_column(Integer)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_validation_status: Mapped[str | None] = mapped_column(String(30))
+    runtime_build_id: Mapped[int | None] = mapped_column(Integer)
+    runtime_image: Mapped[str | None] = mapped_column(String(300))
+    environment: Mapped[str | None] = mapped_column(String(30))
     created_by: Mapped[str | None] = mapped_column(String(255))

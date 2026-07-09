@@ -202,18 +202,96 @@ def _os_environ() -> dict:
     return dict(os.environ)
 
 
+def _advance_pipelines() -> None:
+    """Progress running pipeline executions (release ready steps, finalize)."""
+    try:
+        from t2c_ingest.features.pipelines.runner import advance_pipeline_executions
+
+        with SessionLocal() as db:
+            advance_pipeline_executions(db)
+    except Exception as exc:  # noqa: BLE001 - never let orchestration kill the worker loop
+        print(f"[worker] pipeline advance error: {exc}")
+
+
+def _process_library_actions() -> bool:
+    """Claim and run one queued cluster-library action (pip install/uninstall/reinstall)."""
+    try:
+        from t2c_ingest.features.cluster_libraries.service import run_action
+        from t2c_ingest.models.cluster_library import ClusterLibraryAction
+
+        with SessionLocal() as db:
+            action = db.scalar(
+                select(ClusterLibraryAction)
+                .where(ClusterLibraryAction.status == "queued")
+                .order_by(ClusterLibraryAction.id)
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
+            if action is None:
+                return False
+            print(f"[worker] library action {action.id}: {action.action} {action.package_spec}")
+            run_action(db, action)
+            print(f"[worker] library action {action.id} -> {action.status}")
+            return True
+    except Exception as exc:  # noqa: BLE001 - never let a library action kill the worker loop
+        print(f"[worker] library action error: {exc}")
+        return False
+
+
+def _process_runtime_jobs() -> bool:
+    """Claim and run one queued runtime build or validation (image build / cluster validation)."""
+    ran = False
+    try:
+        from t2c_ingest.features.runtime.service import run_build, run_validation
+        from t2c_ingest.models.runtime import RuntimeBuild, RuntimeValidation
+
+        with SessionLocal() as db:
+            build = db.scalar(
+                select(RuntimeBuild).where(RuntimeBuild.status == "queued")
+                .order_by(RuntimeBuild.id).with_for_update(skip_locked=True).limit(1)
+            )
+            if build is not None:
+                print(f"[worker] runtime build {build.id} ({build.image_full_name})")
+                run_build(db, build)
+                print(f"[worker] runtime build {build.id} -> {build.status}")
+                return True
+        with SessionLocal() as db:
+            val = db.scalar(
+                select(RuntimeValidation).where(RuntimeValidation.status == "queued")
+                .order_by(RuntimeValidation.id).with_for_update(skip_locked=True).limit(1)
+            )
+            if val is not None:
+                print(f"[worker] runtime validation {val.id} ({val.validation_type})")
+                run_validation(db, val)
+                print(f"[worker] runtime validation {val.id} -> {val.status}")
+                return True
+    except Exception as exc:  # noqa: BLE001 - never let a runtime job kill the worker loop
+        print(f"[worker] runtime job error: {exc}")
+    return ran
+
+
 def main() -> None:
     poll = settings.worker_poll_interval_seconds
     print(f"[worker] started; polling every {poll}s; spark master={settings.spark_master_url}")
     while True:
+        ran = False
         with SessionLocal() as db:
             execution = _claim_next(db)
-            if execution is None:
-                time.sleep(poll)
-                continue
-            print(f"[worker] running execution {execution.id} ({execution.target_name})")
-            _run_one(db, execution)
-            print(f"[worker] execution {execution.id} -> {execution.status}")
+            if execution is not None:
+                ran = True
+                print(f"[worker] running execution {execution.id} ({execution.target_name})")
+                _run_one(db, execution)
+                print(f"[worker] execution {execution.id} -> {execution.status}")
+        # Progress in-flight pipelines (release ready steps, finalize) every tick.
+        _advance_pipelines()
+        # Process one queued library install/uninstall per tick.
+        if _process_library_actions():
+            ran = True
+        # Process one queued runtime build/validation per tick.
+        if _process_runtime_jobs():
+            ran = True
+        if not ran:
+            time.sleep(poll)
 
 
 if __name__ == "__main__":

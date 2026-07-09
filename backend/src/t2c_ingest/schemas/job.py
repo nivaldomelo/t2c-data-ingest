@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from t2c_ingest.models.job import JOB_TYPES
+from t2c_ingest.schemas.tag import TagLite
 
 
 class JobBase(BaseModel):
@@ -36,7 +37,10 @@ class JobBase(BaseModel):
 
 
 class JobCreate(JobBase):
-    pass
+    # Tags to attach on creation (created if new) and whether to auto-provision a starter
+    # workspace (in the versioned dir) instead of requiring an explicit script_path.
+    tags: list[str] = Field(default_factory=list)
+    create_workspace: bool = False
 
 
 class JobUpdate(BaseModel):
@@ -68,6 +72,62 @@ class JobOut(JobBase):
     updated_by: str | None = None
     created_at: datetime
     updated_at: datetime
+    tags: list[TagLite] = Field(default_factory=list)
+    # Soft-delete bookkeeping (null for active jobs).
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
+    delete_reason: str | None = None
+    archived_code_path: str | None = None
+
+
+class JobConnectionInfo(BaseModel):
+    """Resolved connection metadata for the job settings/overview (never includes secrets)."""
+
+    id: int | None = None
+    name: str | None = None
+    type: str | None = None
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    last_test_status: str | None = None
+
+
+class JobExecLite(BaseModel):
+    id: int
+    status: str
+    started_at: datetime | None = None
+    duration_seconds: int | None = None
+
+
+class JobListItem(BaseModel):
+    """Card-friendly job representation for the paginated Jobs grid (batched, no N+1)."""
+
+    id: int
+    name: str
+    description: str | None = None
+    type: str
+    job_type_label: str
+    engine: str | None = None
+    engine_label: str
+    engine_kind: str  # "spark" | "python" — drives the card icon
+    script_path: str | None = None
+    is_active: bool
+    retry_count: int | None = None
+    source_connection_name: str | None = None
+    target_connection_name: str | None = None
+    tags: list[TagLite] = Field(default_factory=list)
+    last_execution: JobExecLite | None = None
+    avg_success_duration_seconds: float | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class JobsSummaryOut(BaseModel):
+    total_jobs: int = 0
+    spark_jobs: int = 0
+    python_jobs: int = 0
+    active_jobs: int = 0
+    recent_failures: int = 0
 
 
 class JobDetailOut(JobOut):
@@ -75,11 +135,25 @@ class JobDetailOut(JobOut):
 
     source_connection_name: str | None = None
     target_connection_name: str | None = None
+    # Structured connection details (resolved by id or by name from the job arguments).
+    source_connection: JobConnectionInfo | None = None
+    target_connection: JobConnectionInfo | None = None
+    connection: JobConnectionInfo | None = None
     executions_total: int = 0
     last_execution_id: int | None = None
     last_status: str | None = None
     last_finished_at: datetime | None = None
     avg_duration_seconds: float | None = None
+    # Last execution details (for the overview "última execução" card).
+    last_execution_started_at: datetime | None = None
+    last_execution_duration_seconds: int | None = None
+    last_execution_engine: str | None = None
+    last_execution_trigger: str | None = None
+    # Operational health metrics.
+    success_rate: int | None = None
+    recent_failures: int = 0
+    running_executions: int = 0
+    active_schedules: int = 0
 
 
 class JobCodeOut(BaseModel):
@@ -103,5 +177,30 @@ class JobCodeSaveRequest(BaseModel):
     change_summary: str | None = None
 
 
+class JobSearchOut(BaseModel):
+    """Light job representation for the pipeline builder command palette."""
+
+    id: int
+    name: str
+    description: str | None = None
+    job_type: str
+    engine: str | None = None
+    active: bool
+    tags: list[TagLite] = Field(default_factory=list)
+
+
 class JobRunRequest(BaseModel):
     parameters: dict | None = None
+
+
+class JobDeleteRequest(BaseModel):
+    reason: str | None = None
+    # Reserved for a future admin "forced delete"; ignored (blocked) in this version.
+    force: bool = False
+
+
+class JobDeleteResult(BaseModel):
+    success: bool = True
+    message: str
+    job_id: int
+    archived_code_path: str | None = None
