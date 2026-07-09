@@ -5,6 +5,7 @@ from t2c_ingest.features.auth.router import router as auth_router
 from t2c_ingest.features.cluster_libraries.router import router as libraries_router
 from t2c_ingest.features.cluster_libraries.router import actions_router as library_actions_router
 from t2c_ingest.features.clusters.router import router as clusters_router
+from t2c_ingest.features.clusters.router import cv_router as cluster_validations_router
 from t2c_ingest.features.connections.router import router as connections_router
 from t2c_ingest.features.dashboard.router import router as dashboard_router
 from t2c_ingest.features.executions.router import router as executions_router
@@ -22,6 +23,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(clusters_router)
+api_router.include_router(cluster_validations_router)
 api_router.include_router(connections_router)
 api_router.include_router(jobs_router)
 api_router.include_router(jobs_workspace_router)

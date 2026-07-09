@@ -560,6 +560,33 @@ instalação, o botão *Instalar biblioteca* não aparece; sem permissão de rem
 Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
 validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
 
+## Clusters
+
+A tela **Clusters** (`/clusters`) mostra os clusters Spark em **cards** com dados **ao vivo** do
+Spark master (a API lê `GET {SPARK_MASTER}:8080/json/`), não contadores estáticos:
+
+- **Cards de resumo**: total, ativos, **workers**, **cores** e **memória** somados dos workers
+  vivos e última validação (`GET /api/v1/clusters/summary`).
+- **Card por cluster**: nome, badge de status (Ativo/Inativo/Inacessível/Validando/Não validado),
+  master URL, tipo, ambiente (Local Docker/Kubernetes), workers/cores/memória (ao vivo) e
+  esperados, última verificação e validação. Ações: **Ver detalhes**, **Testar conexão**
+  (`POST /clusters/{id}/test` — ping + refresh), **Ver workers**.
+- **Detalhe (modal) com abas**: **Resumo**; **Workers** (lista ao vivo com status/cores/memória
+  por worker + alerta quando há menos de 3 workers para execução distribuída); **Bibliotecas**
+  (libs do runtime + validar nos workers); **Validações** (histórico + disparar validação de
+  bibliotecas / execução distribuída, que reutilizam a fila de validações do runtime);
+  **Configurações**.
+
+Endpoints: `GET /clusters[/summary,/{id},/{id}/workers,/{id}/validations]`,
+`POST /clusters/{id}/{test,validate-workers,validate-libraries,validate-distributed-execution}`,
+`GET /cluster-validations/{id}/logs`. Colunas novas em `clusters`
+(`expected_workers`, `last_checked_at`, `last_validation_status`, `runtime_image`,
+`environment`) na migração 0015. Permissões: `ingest:clusters:read/test/validate/manage`.
+
+> Os nomes dos workers (`spark-worker-1/2/3`) são resolvidos por DNS reverso do IP reportado
+> pelo master; se indisponível, cai para o IP/label. Cores/memória refletem o cluster real (no
+> local, 1 core / 1G por worker → 3 cores / 3G no total).
+
 ## Ambiente de Execução (runtime do cluster)
 
 Para garantir que **bibliotecas e código dos jobs estejam iguais em todos os workers** (inclusive
