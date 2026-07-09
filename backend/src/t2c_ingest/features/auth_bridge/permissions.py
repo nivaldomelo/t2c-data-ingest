@@ -55,6 +55,9 @@ INGEST_LIBRARIES_READ = "ingest:libraries:read"
 INGEST_LIBRARIES_INSTALL = "ingest:libraries:install"
 INGEST_LIBRARIES_UNINSTALL = "ingest:libraries:uninstall"
 INGEST_LIBRARIES_MANAGE = "ingest:libraries:manage"
+# Backfill / reprocessing (reprocess jobs/pipelines/control groups; watermark reset is separate).
+INGEST_BACKFILL_RUN = "ingest:backfill:run"
+INGEST_BACKFILL_WATERMARK = "ingest:backfill:watermark"
 # Runtime environment (managed image: libraries manifest + builds + cluster validation).
 INGEST_RUNTIME_READ = "ingest:runtime:read"
 INGEST_RUNTIME_LIBRARIES_WRITE = "ingest:runtime:libraries:write"
@@ -118,6 +121,8 @@ ALL_PERMISSIONS = {
     INGEST_RUNTIME_BUILD,
     INGEST_RUNTIME_ACTIVATE,
     INGEST_RUNTIME_VALIDATE,
+    INGEST_BACKFILL_RUN,
+    INGEST_BACKFILL_WATERMARK,
     INGEST_TAGS_READ,
     INGEST_TAGS_WRITE,
     INGEST_TAGS_DELETE,
@@ -179,6 +184,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_BUILD,
         INGEST_RUNTIME_ACTIVATE,
         INGEST_RUNTIME_VALIDATE,
+        INGEST_BACKFILL_RUN,
+        INGEST_BACKFILL_WATERMARK,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_TAGS_DELETE,
@@ -223,6 +230,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_LIBRARIES_WRITE,
         INGEST_RUNTIME_BUILD,
         INGEST_RUNTIME_VALIDATE,
+        INGEST_BACKFILL_RUN,
+        INGEST_BACKFILL_WATERMARK,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_JOBS_TAGS_WRITE,
@@ -272,6 +281,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_LIBRARIES_READ,
         INGEST_RUNTIME_READ,
         INGEST_RUNTIME_VALIDATE,
+        INGEST_BACKFILL_RUN,
         INGEST_TAGS_READ,
     },
 }

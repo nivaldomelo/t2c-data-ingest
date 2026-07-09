@@ -213,6 +213,17 @@ def _advance_pipelines() -> None:
         print(f"[worker] pipeline advance error: {exc}")
 
 
+def _advance_backfills() -> None:
+    """Roll up backfill run statuses once their executions/pipelines finish."""
+    try:
+        from t2c_ingest.features.backfill.service import advance_backfills
+
+        with SessionLocal() as db:
+            advance_backfills(db)
+    except Exception as exc:  # noqa: BLE001 - never let it kill the worker loop
+        print(f"[worker] backfill advance error: {exc}")
+
+
 def _process_library_actions() -> bool:
     """Claim and run one queued cluster-library action (pip install/uninstall/reinstall)."""
     try:
@@ -284,6 +295,8 @@ def main() -> None:
                 print(f"[worker] execution {execution.id} -> {execution.status}")
         # Progress in-flight pipelines (release ready steps, finalize) every tick.
         _advance_pipelines()
+        # Roll up backfill status once spawned executions/pipelines finish.
+        _advance_backfills()
         # Process one queued library install/uninstall per tick.
         if _process_library_actions():
             ran = True

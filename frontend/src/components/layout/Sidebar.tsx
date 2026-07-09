@@ -4,6 +4,7 @@ import {
   CalendarClock,
   Database,
   LayoutDashboard,
+  History,
   Package,
   PlayCircle,
   ServerCog,
@@ -31,6 +32,7 @@ const NAV = [
   { to: "/pipelines", label: "Pipelines", icon: Workflow },
   { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/executions", label: "Execuções", icon: PlayCircle },
+  { to: "/backfills", label: "Reprocessamentos", icon: History },
   { to: "/airflow", label: "Airflow legado", icon: Wind },
 ];
 

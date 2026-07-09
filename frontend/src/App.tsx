@@ -18,6 +18,7 @@ import SchedulesPage from "@/features/schedules/SchedulesPage";
 import TagsPage from "@/features/tags/TagsPage";
 import ExecutionsPage from "@/features/executions/ExecutionsPage";
 import ExecutionDetailPage from "@/features/executions/ExecutionDetailPage";
+import BackfillsPage from "@/features/backfill/BackfillsPage";
 import AirflowPage from "@/features/airflow/AirflowPage";
 
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/tags" element={<TagsPage />} />
         <Route path="/executions" element={<ExecutionsPage />} />
         <Route path="/executions/:id" element={<ExecutionDetailPage />} />
+        <Route path="/backfills" element={<BackfillsPage />} />
         <Route path="/airflow" element={<AirflowPage />} />
       </Route>
       <Route path="/login" element={<Navigate to="/" replace />} />

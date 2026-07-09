@@ -32,7 +32,8 @@ def _now() -> datetime:
 
 
 def start_pipeline_execution(
-    db: Session, pipeline: PipelineDefinition, *, triggered_by: str, trigger_type: str = "manual"
+    db: Session, pipeline: PipelineDefinition, *, triggered_by: str, trigger_type: str = "manual",
+    from_step_id: int | None = None,
 ) -> PipelineExecution:
     pe = PipelineExecution(
         pipeline_id=pipeline.id, status="running", trigger_type=trigger_type,
@@ -48,8 +49,33 @@ def start_pipeline_execution(
             )
         )
     db.flush()
+    # Reprocess "from a step": mark steps NOT in {from_step} ∪ downstream as already-done so the
+    # chosen step (and everything after it) runs while upstreams are reused.
+    if from_step_id:
+        keep = _downstream_closure(db, pipeline.id, from_step_id)
+        for se in db.scalars(select(PipelineStepExecution).where(PipelineStepExecution.pipeline_execution_id == pe.id)).all():
+            if se.step_id not in keep:
+                se.status = "success"
+                se.message = "Reaproveitado (reprocessamento a partir do step selecionado)."
+                se.finished_at = _now()
+        db.flush()
     _release_ready_steps(db, pe)
     return pe
+
+
+def _downstream_closure(db: Session, pipeline_id: int, start_step_id: int) -> set[int]:
+    """Return {start_step} plus every step reachable following downstream dependency edges."""
+    adj: dict[int, list[int]] = {}
+    for d in _deps(db, pipeline_id):
+        adj.setdefault(d.upstream_step_id, []).append(d.downstream_step_id)
+    seen = {start_step_id}
+    stack = [start_step_id]
+    while stack:
+        for nxt in adj.get(stack.pop(), []):
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return seen
 
 
 def _step_map(db: Session, pipeline_id: int) -> dict[int, PipelineStep]:

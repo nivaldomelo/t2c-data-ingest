@@ -560,6 +560,33 @@ instalação, o botão *Instalar biblioteca* não aparece; sem permissão de rem
 Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
 validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
 
+## Reprocessamentos (backfill)
+
+A tela **Reprocessamentos** (`/backfills`) permite reprocessar dados de forma **controlada e
+rastreável**, reutilizando a máquina de execução (as execuções nascem com `trigger_type=backfill`):
+
+- **Job** — reprocessa um job específico.
+- **Pipeline** — reexecuta o pipeline; opcionalmente **a partir de um step** (os steps anteriores
+  são marcados como reaproveitados e só o step escolhido + descendentes rodam).
+- **Grupo de controle** — reprocessa todos os jobs vinculados (via `ingestion_control_id`) às
+  tabelas de um `grupo` do Controle de Ingestão.
+- **Tabela de controle** — idem para uma tabela específica.
+
+Opções: **período** (`period_start`/`period_end`, injetados como parâmetros da execução) e
+**reset de watermark** das tabelas do controle — este exige a permissão dedicada
+`ingest:backfill:watermark` e é **auditado** (`WATERMARK_RESET`, com valor antigo/novo). Vazio =
+reprocessar do zero. Cada reprocessamento vira um `backfill_run` com status roll-up
+(`queued → running → success/partial/failed`) atualizado pelo worker conforme as execuções/pipeline
+terminam, e lista as execuções geradas.
+
+Endpoints: `GET/POST /api/v1/backfills`, `GET /api/v1/backfills/{id}`,
+`GET /api/v1/pipelines/{id}/steps`. Permissões: `ingest:backfill:run` (admin/editor/data_owner) e
+`ingest:backfill:watermark` (admin/editor). Eventos: `BACKFILL_REQUESTED/STARTED`, `WATERMARK_RESET`.
+
+> Para o reprocessamento de **grupo/tabela** disparar jobs, os jobs precisam estar vinculados à
+> linha de controle pelo campo `ingestion_control_id`. Sem vínculo, o reset de watermark é aplicado
+> mas nenhum job é enfileirado (0 alvos).
+
 ## Clusters
 
 A tela **Clusters** (`/clusters`) mostra os clusters Spark em **cards** com dados **ao vivo** do

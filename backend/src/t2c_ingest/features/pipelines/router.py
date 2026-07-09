@@ -168,6 +168,21 @@ def get_graph(
     return GraphPayload(**load_graph(db, _load(db, pipeline_id)))
 
 
+@router.get("/{pipeline_id}/steps")
+def list_steps(
+    pipeline_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_PIPELINES_READ)),
+) -> list[dict]:
+    """Lightweight step list (id + label + order) for the backfill "reprocess from step" selector."""
+    _load(db, pipeline_id)
+    steps = db.scalars(
+        select(PipelineStep).where(PipelineStep.pipeline_id == pipeline_id).order_by(PipelineStep.order_index)
+    ).all()
+    return [{"id": s.id, "label": s.label or s.name or s.step_key or f"step {s.order_index}",
+             "order_index": s.order_index} for s in steps]
+
+
 @router.put("/{pipeline_id}/graph", response_model=GraphPayload)
 def put_graph(
     pipeline_id: int,
