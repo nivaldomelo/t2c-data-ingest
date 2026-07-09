@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LogOut, Search, Zap } from "lucide-react";
+import { LogOut, Menu, Search, Zap } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
@@ -10,13 +10,23 @@ function initials(nameOrEmail: string): string {
   return (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "");
 }
 
-export function Topbar() {
+export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const { me, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const label = me?.name ?? me?.email ?? "";
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6">
+      {/* Abre o menu lateral no mobile */}
+      <button
+        type="button"
+        onClick={onMenuClick}
+        aria-label="Abrir menu"
+        className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 lg:hidden"
+      >
+        <Menu size={20} />
+      </button>
+
       {/* Marca (aparece quando a sidebar está escondida) */}
       <div className="flex items-center gap-2 lg:hidden">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500">
