@@ -9,6 +9,7 @@ import {
   Package,
   PlayCircle,
   ServerCog,
+  ShieldCheck,
   Plug,
   Server,
   Tags as TagsIcon,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { useAuth } from "@/lib/auth";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -35,10 +37,13 @@ const NAV = [
   { to: "/executions", label: "Execuções", icon: PlayCircle },
   { to: "/backfills", label: "Reprocessamentos", icon: History },
   { to: "/alerts", label: "Alertas", icon: Bell },
+  { to: "/audit", label: "Auditoria", icon: ShieldCheck, perm: "ingest:admin" },
   { to: "/airflow", label: "Airflow legado", icon: Wind },
 ];
 
 export function Sidebar() {
+  const { can } = useAuth();
+  const nav = NAV.filter((item) => !item.perm || can(item.perm));
   return (
     <aside className="hidden w-64 shrink-0 flex-col bg-graphite-900 lg:flex">
       <div className="flex items-center gap-3 px-5 py-5">
@@ -56,7 +61,7 @@ export function Sidebar() {
           Plataforma
         </p>
         <nav className="space-y-1">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {nav.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}

@@ -560,6 +560,17 @@ instalação, o botão *Instalar biblioteca* não aparece; sem permissão de rem
 Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
 validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
 
+## Auditoria (governança)
+
+A tela **Auditoria** (`/audit`, **somente admin** — `ingest:admin`) é a trilha de todas as ações
+críticas gravadas em `audit_events`: criação/edição/exclusão de jobs, alteração de código, runtime
+buildado/ativado, cluster validado, conexões/variáveis, backfill, watermark reset, canais de
+alerta etc. Cards de resumo (total, hoje, 7 dias, usuários), **filtros** (ação, entidade, usuário,
+busca em ação/entidade/usuário/detalhe) e **detalhe JSON** por evento (sem conteúdo de arquivos ou
+secrets). Endpoints: `GET /api/v1/audit/{summary,actions,events}`. A exclusão de jobs já faz
+**soft delete + archive de código** (ver Detalhes do Job) e o histórico de versões vive em
+`job_code_versions`.
+
 ## Alertas e notificações
 
 A tela **Alertas** (`/alerts`) envia eventos importantes para **Teams**, **Slack** ou **webhooks
