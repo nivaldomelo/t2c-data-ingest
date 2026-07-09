@@ -11,6 +11,8 @@ import json
 import os
 import shutil
 import subprocess
+import time
+import urllib.request
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -155,6 +157,94 @@ def _jobs_snapshot(ctx: str) -> dict:
     return {"file_count": len(files), "files": sorted(files)}
 
 
+def _docker(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
+    return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
+
+
+def _recreate_worker(name: str, image: str) -> str:
+    """Recreate a compose worker container with a new image, cloning its config via inspect.
+
+    Bind mounts / networks / ports / command come from `docker inspect` so host-absolute paths
+    stay correct (only the host daemon can honor them). Runs from the worker via the mounted
+    socket. Returns a human-readable log line.
+    """
+    insp = _docker(["inspect", name])
+    if insp.returncode != 0:
+        return f"  {name}: inspeção falhou ({insp.stderr.strip()[:120]})"
+    data = json.loads(insp.stdout)[0]
+    cfg, host, nets = data["Config"], data["HostConfig"], data["NetworkSettings"]["Networks"]
+    hostname = cfg.get("Hostname") or name
+    cmd = cfg.get("Cmd") or []
+    binds = host.get("Binds") or []
+    net_name = next(iter(nets), None)
+    aliases = [a for a in (nets.get(net_name, {}).get("Aliases") or []) if a and a != data.get("Id", "")[:12]]
+    ports = host.get("PortBindings") or {}
+    # Preserve docker-compose labels so Compose keeps managing the container after recreate.
+    labels = {k: v for k, v in (cfg.get("Labels") or {}).items() if k.startswith("com.docker.compose")}
+
+    run = ["run", "-d", "--name", name, "--hostname", hostname, "--restart", "no"]
+    for k, v in labels.items():
+        run += ["--label", f"{k}={v}"]
+    if net_name:
+        run += ["--network", net_name]
+        for alias in aliases:
+            run += ["--network-alias", alias]
+    for b in binds:
+        run += ["-v", b]
+    for cport, maps in ports.items():
+        for m in maps:
+            hostport = m.get("HostPort")
+            if hostport:
+                run += ["-p", f"{hostport}:{cport.split('/')[0]}"]
+    run += [image, *cmd]
+
+    rm = _docker(["rm", "-f", name])
+    created = _docker(run)
+    if created.returncode != 0:
+        return f"  {name}: recriação falhou ({created.stderr.strip()[:160]})"
+    return f"  {name}: recriado com {image} (rm={'ok' if rm.returncode == 0 else 'skip'})"
+
+
+def _wait_for_workers(expected: int, timeout: int = 60) -> tuple[int, str]:
+    """Poll the Spark master REST until >= expected workers are ALIVE (or timeout)."""
+    url = settings.runtime_spark_master_webui.rstrip("/") + "/json/"
+    deadline = time.monotonic() + timeout
+    detected = 0
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                payload = json.loads(resp.read().decode())
+            detected = len([w for w in payload.get("workers", []) if w.get("state") == "ALIVE"])
+            if detected >= expected:
+                return detected, f"Workers ALIVE: {detected}/{expected}"
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(3)
+    return detected, f"Workers ALIVE após timeout: {detected}/{expected}"
+
+
+def apply_active_image(db: Session) -> tuple[bool, str, RuntimeBuild | None]:
+    """Retag the active build image to the workers' tag and recreate the local worker containers."""
+    build = db.scalar(select(RuntimeBuild).where(RuntimeBuild.is_active.is_(True)).limit(1))
+    if build is None:
+        return False, "Nenhuma imagem runtime ativa. Ative um build antes de aplicar.", None
+    if not _docker_available():
+        return False, "Docker CLI indisponível no worker.", build
+
+    logs = [f"Aplicando imagem ativa {build.image_full_name} aos workers do cluster."]
+    tag = _docker(["tag", build.image_full_name, settings.runtime_worker_image_tag])
+    if tag.returncode != 0:
+        return False, f"Falha ao retaggear imagem: {tag.stderr.strip()[:160]}", build
+    logs.append(f"docker tag {build.image_full_name} {settings.runtime_worker_image_tag}")
+
+    for name in settings.runtime_spark_worker_containers_list:
+        logs.append(_recreate_worker(name, settings.runtime_worker_image_tag))
+    detected, wait_msg = _wait_for_workers(settings.spark_expected_workers)
+    logs.append(wait_msg)
+    ok = detected >= settings.spark_expected_workers
+    return ok, "\n".join(logs), build
+
+
 def activate_build(db: Session, build: RuntimeBuild) -> None:
     db.query(RuntimeBuild).filter(RuntimeBuild.id != build.id, RuntimeBuild.is_active.is_(True)).update(
         {"is_active": False, "status": "deprecated"}
@@ -174,6 +264,21 @@ def run_validation(db: Session, validation: RuntimeValidation) -> None:
     _audit(db, "RUNTIME_VALIDATION_STARTED", validation)
 
     expected = validation.worker_count_expected or settings.spark_expected_workers
+    apply_log = ""
+    apply_failed = False
+    if validation.validation_type == "apply":
+        # Deploy the active image to the workers, then validate libraries on the new cluster.
+        ok, apply_log, _build = apply_active_image(db)
+        apply_log += "\n"
+        apply_failed = not ok
+        validation.validation_type = "libraries"  # the result IS a libraries validation
+        if not validation.libraries_checked:
+            validation.libraries_checked = [
+                lib.package_name for lib in db.scalars(
+                    select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))
+                ).all()
+            ]
+
     if validation.validation_type == "libraries":
         libs = ",".join(validation.libraries_checked or []) if isinstance(validation.libraries_checked, list) else ""
         script = "/opt/t2c/spark/jobs/system/validate_runtime_libraries.py"
@@ -186,6 +291,8 @@ def run_validation(db: Session, validation: RuntimeValidation) -> None:
     parsed = None
     error = None
     try:
+        if apply_failed:
+            raise RuntimeError("Falha ao aplicar a imagem ativa aos workers (veja os logs).")
         logs, parsed = _spark_submit_validation(script, extra)
         if parsed is None:
             error = "Não foi possível interpretar o resultado da validação (RUNTIME_VALIDATION_JSON ausente)."
@@ -194,7 +301,7 @@ def run_validation(db: Session, validation: RuntimeValidation) -> None:
         logs = logs or f"[erro] {error}"
 
     validation.finished_at = _now()
-    validation.logs = (logs or "")[:200_000]
+    validation.logs = ((apply_log + (logs or "")) or "")[:200_000]
     if parsed:
         validation.worker_count_detected = parsed.get("detected_workers")
         validation.workers_result = parsed.get("by_host")

@@ -135,6 +135,22 @@ class Settings(BaseSettings):
     # so the driver Python matches the executors (the runtime image). Empty disables docker exec.
     runtime_spark_submit_container: str = Field(default="", validation_alias="RUNTIME_SPARK_SUBMIT_CONTAINER")
     spark_expected_workers: int = Field(default=3, validation_alias="SPARK_EXPECTED_WORKERS")
+    # Applying an active image to the local cluster: retag to this tag (used by the worker
+    # services in docker-compose) and recreate these containers with the new image.
+    runtime_worker_image_tag: str = Field(
+        default="t2c-data-ingest-spark-runtime:local", validation_alias="RUNTIME_WORKER_IMAGE_TAG"
+    )
+    runtime_spark_worker_containers: str = Field(
+        default="t2c-data-ingest-spark-worker-1-1,t2c-data-ingest-spark-worker-2-1,t2c-data-ingest-spark-worker-3-1",
+        validation_alias="RUNTIME_SPARK_WORKER_CONTAINERS",
+    )
+    runtime_spark_master_webui: str = Field(
+        default="http://spark-master:8080", validation_alias="RUNTIME_SPARK_MASTER_WEBUI"
+    )
+
+    @property
+    def runtime_spark_worker_containers_list(self) -> list[str]:
+        return [c.strip() for c in self.runtime_spark_worker_containers.split(",") if c.strip()]
 
     @property
     def job_code_editable_extensions_set(self) -> set[str]:

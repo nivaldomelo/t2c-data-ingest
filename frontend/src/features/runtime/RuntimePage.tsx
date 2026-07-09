@@ -97,7 +97,7 @@ export default function RuntimePage() {
       {tab === "libraries" && <LibrariesTab canWrite={canWrite} />}
       {tab === "requirements" && <RequirementsTab canBuild={canBuild} onBuilt={() => { setTab("builds"); qc.invalidateQueries({ queryKey: ["runtime-builds"] }); }} />}
       {tab === "builds" && <BuildsTab canActivate={canActivate} />}
-      {tab === "validation" && <ValidationTab canValidate={canValidate} expected={summary?.workers_expected ?? 3} />}
+      {tab === "validation" && <ValidationTab canValidate={canValidate} canActivate={canActivate} expected={summary?.workers_expected ?? 3} hasActiveImage={!!summary?.active_build} />}
     </div>
   );
 }
@@ -261,22 +261,41 @@ function BuildLogsModal({ buildId, onClose }: { buildId: number; onClose: () => 
 }
 
 /* ── Validação do Cluster ── */
-function ValidationTab({ canValidate, expected }: { canValidate: boolean; expected: number }) {
+function ValidationTab({ canValidate, canActivate, expected, hasActiveImage }: { canValidate: boolean; canActivate: boolean; expected: number; hasActiveImage: boolean }) {
   const qc = useQueryClient();
   const { data } = useQuery({
     queryKey: ["runtime-validations"],
     queryFn: () => api.get<RuntimeValidation[]>("/api/v1/runtime/validations"),
     refetchInterval: (q) => ((q.state.data as RuntimeValidation[] | undefined)?.some((v) => ["queued", "running"].includes(v.status)) ? 3000 : false),
   });
+  const invalidate = () => { qc.invalidateQueries({ queryKey: ["runtime-validations"] }); qc.invalidateQueries({ queryKey: ["runtime-summary"] }); };
   const run = useMutation({
     mutationFn: (type: string) => api.post("/api/v1/runtime/validations", { validation_type: type }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["runtime-validations"] }); qc.invalidateQueries({ queryKey: ["runtime-summary"] }); },
+    onSuccess: invalidate,
+  });
+  const apply = useMutation({
+    mutationFn: () => api.post("/api/v1/runtime/apply", {}),
+    onSuccess: invalidate,
   });
   const runAll = async () => { await run.mutateAsync("distributed"); await run.mutateAsync("libraries"); };
   const vals = data ?? [];
 
   return (
     <div className="space-y-4">
+      {canActivate && (
+        <Card className="border-brand-200 bg-brand-50/40 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Aplicar imagem ativa aos workers</p>
+              <p className="mt-0.5 text-sm text-gray-500">Recria os {expected} workers Spark locais com a imagem runtime ativa e valida as bibliotecas em todos eles.</p>
+            </div>
+            <PrimaryButton icon={<Hammer size={15} />} loading={apply.isPending} disabled={!hasActiveImage} onClick={() => apply.mutate()}>
+              Aplicar e validar
+            </PrimaryButton>
+          </div>
+          {!hasActiveImage && <p className="mt-2 text-xs text-amber-600">Ative um build de imagem antes de aplicar.</p>}
+        </Card>
+      )}
       {canValidate && (
         <Card className="p-4">
           <div className="flex flex-wrap items-center gap-2">

@@ -188,3 +188,25 @@ def create_validation(payload: RuntimeValidateRequest, db: Session = Depends(get
     db.commit()
     db.refresh(val)
     return RuntimeValidationOut.model_validate(val)
+
+
+@router.post("/apply", response_model=RuntimeValidationOut, status_code=status.HTTP_201_CREATED)
+def apply_active_image(db: Session = Depends(get_db), user: CurrentUser = Depends(require_permission(perms.INGEST_RUNTIME_ACTIVATE))) -> RuntimeValidationOut:
+    """Deploy the ACTIVE runtime image to the local Spark workers, then validate libraries.
+
+    Recreates the worker containers with the active image (retag → recreate) and runs the
+    library validation across the fresh cluster — closing the loop locally.
+    """
+    build = db.scalar(select(RuntimeBuild).where(RuntimeBuild.is_active.is_(True)).limit(1))
+    if build is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nenhuma imagem runtime ativa. Ative um build antes de aplicar.")
+    libs = [l.package_name for l in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
+    val = RuntimeValidation(
+        runtime_build_id=build.id, validation_type="apply", status="queued",
+        worker_count_expected=settings.spark_expected_workers, libraries_checked=libs, created_by=user.email,
+    )
+    db.add(val)
+    record_audit(db, action="RUNTIME_BUILD_ACTIVATED", user=user, entity_type="runtime", entity_id=str(build.id), detail={"apply": True})
+    db.commit()
+    db.refresh(val)
+    return RuntimeValidationOut.model_validate(val)

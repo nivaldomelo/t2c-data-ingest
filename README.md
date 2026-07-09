@@ -565,8 +565,21 @@ executor por worker). As validações são jobs Spark reais em `spark/jobs/syste
   (ex.: “`pyarrow` ausente em `spark-worker-3`”). É assim que se investiga lib faltando num worker.
 
 Fluxo local ponta a ponta (validado): cadastrar libs → gerar `requirements.txt` → **Criar build**
-(imagem versionada com libs+jobs) → **Ativar** → **Validar execução distribuída** (3 workers) e
-**Validar bibliotecas**.
+(imagem versionada com libs+jobs) → **Ativar** → **Aplicar e validar** → **Validar execução
+distribuída** (3 workers).
+
+### Aplicar a imagem ativa aos workers (fechar o ciclo local)
+
+Na aba **Validação do Cluster**, **Aplicar e validar** (`POST /api/v1/runtime/apply`, permissão
+`ingest:runtime:activate`) faz o deploy local da imagem **ativa**: o worker do ingest re-tagueia a
+imagem ativa para a tag usada pelos workers (`RUNTIME_WORKER_IMAGE_TAG`, padrão
+`t2c-data-ingest-spark-runtime:local`) e **recria** os containers `spark-worker-1/2/3` com ela
+(clonando binds/rede/portas/comando via `docker inspect`, preservando os labels do Compose para
+que ele continue gerenciando-os), aguarda os workers registrarem no master e então roda a
+**validação de bibliotecas** no cluster novo. Resultado esperado: as libs cadastradas passam a
+estar disponíveis em **todos os workers** (verde). É o equivalente local a um *rolling update* de
+imagem no Kubernetes. Validado ponta a ponta: após aplicar, `six`/`requests` disponíveis nos 3
+workers, zero falhas.
 
 ### Kubernetes (futuro)
 
