@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import {
+  Bell,
   Boxes,
   CalendarClock,
   Database,
@@ -33,6 +34,7 @@ const NAV = [
   { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/executions", label: "Execuções", icon: PlayCircle },
   { to: "/backfills", label: "Reprocessamentos", icon: History },
+  { to: "/alerts", label: "Alertas", icon: Bell },
   { to: "/airflow", label: "Airflow legado", icon: Wind },
 ];
 

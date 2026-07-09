@@ -19,6 +19,7 @@ import TagsPage from "@/features/tags/TagsPage";
 import ExecutionsPage from "@/features/executions/ExecutionsPage";
 import ExecutionDetailPage from "@/features/executions/ExecutionDetailPage";
 import BackfillsPage from "@/features/backfill/BackfillsPage";
+import AlertsPage from "@/features/alerts/AlertsPage";
 import AirflowPage from "@/features/airflow/AirflowPage";
 
 export default function App() {
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/executions" element={<ExecutionsPage />} />
         <Route path="/executions/:id" element={<ExecutionDetailPage />} />
         <Route path="/backfills" element={<BackfillsPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/airflow" element={<AirflowPage />} />
       </Route>
       <Route path="/login" element={<Navigate to="/" replace />} />

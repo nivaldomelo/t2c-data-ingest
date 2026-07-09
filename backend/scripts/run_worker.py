@@ -196,6 +196,40 @@ def _run_one(db, execution: Execution) -> None:
     finally:
         execution.finished_at = _now()
         db.commit()
+        _emit_execution_alert(db, execution)
+
+
+def _emit_execution_alert(db, execution) -> None:
+    """Raise an alert when a job execution fails/times out, or succeeds with zero records."""
+    try:
+        from t2c_ingest.features.alerts.service import emit
+
+        if execution.status in ("failed", "timeout"):
+            emit(db, event_type="JOB_FAILED", severity="critical",
+                 title=f"Job falhou: {execution.target_name or execution.job_id}",
+                 message=(execution.final_message or "Execução falhou.")[:1000],
+                 job_id=execution.job_id, execution_id=execution.id)
+            db.commit()
+        elif execution.status == "success" and execution.final_message:
+            fm = execution.final_message
+            if "lidos=0" in fm and "gravados=0" in fm:
+                emit(db, event_type="JOB_ZERO_RECORDS", severity="warning",
+                     title=f"Carga com zero registros: {execution.target_name or execution.job_id}",
+                     message=fm[:1000], job_id=execution.job_id, execution_id=execution.id)
+                db.commit()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] alert emit error: {exc}")
+
+
+def _dispatch_alerts() -> None:
+    """Deliver pending alert notifications to their channels."""
+    try:
+        from t2c_ingest.features.alerts.service import dispatch_pending
+
+        with SessionLocal() as db:
+            dispatch_pending(db)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] alert dispatch error: {exc}")
 
 
 def _os_environ() -> dict:
@@ -297,6 +331,8 @@ def main() -> None:
         _advance_pipelines()
         # Roll up backfill status once spawned executions/pipelines finish.
         _advance_backfills()
+        # Deliver queued alert notifications.
+        _dispatch_alerts()
         # Process one queued library install/uninstall per tick.
         if _process_library_actions():
             ran = True

@@ -193,3 +193,15 @@ def _advance_one(db: Session, pe: PipelineExecution) -> None:
     pe.finished_at = _now()
     if pe.started_at:
         pe.duration_seconds = int((pe.finished_at - pe.started_at).total_seconds())
+    if pe.status in ("failed", "partial_success"):
+        try:
+            from t2c_ingest.features.alerts.service import emit
+            from t2c_ingest.models.pipeline import PipelineDefinition
+
+            pd = db.get(PipelineDefinition, pe.pipeline_id)
+            emit(db, event_type="PIPELINE_FAILED",
+                 severity="critical" if pe.status == "failed" else "warning",
+                 title=f"Pipeline {'falhou' if pe.status == 'failed' else 'concluiu com falhas'}: {pd.name if pd else pe.pipeline_id}",
+                 message=pe.message, pipeline_id=pe.pipeline_id, execution_id=pe.id)
+        except Exception:  # noqa: BLE001
+            pass

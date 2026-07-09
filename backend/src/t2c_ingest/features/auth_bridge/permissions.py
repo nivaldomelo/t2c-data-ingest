@@ -55,6 +55,9 @@ INGEST_LIBRARIES_READ = "ingest:libraries:read"
 INGEST_LIBRARIES_INSTALL = "ingest:libraries:install"
 INGEST_LIBRARIES_UNINSTALL = "ingest:libraries:uninstall"
 INGEST_LIBRARIES_MANAGE = "ingest:libraries:manage"
+# Alerts / notifications (channels + delivery).
+INGEST_ALERTS_READ = "ingest:alerts:read"
+INGEST_ALERTS_MANAGE = "ingest:alerts:manage"
 # Backfill / reprocessing (reprocess jobs/pipelines/control groups; watermark reset is separate).
 INGEST_BACKFILL_RUN = "ingest:backfill:run"
 INGEST_BACKFILL_WATERMARK = "ingest:backfill:watermark"
@@ -123,6 +126,8 @@ ALL_PERMISSIONS = {
     INGEST_RUNTIME_VALIDATE,
     INGEST_BACKFILL_RUN,
     INGEST_BACKFILL_WATERMARK,
+    INGEST_ALERTS_READ,
+    INGEST_ALERTS_MANAGE,
     INGEST_TAGS_READ,
     INGEST_TAGS_WRITE,
     INGEST_TAGS_DELETE,
@@ -186,6 +191,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_VALIDATE,
         INGEST_BACKFILL_RUN,
         INGEST_BACKFILL_WATERMARK,
+        INGEST_ALERTS_READ,
+        INGEST_ALERTS_MANAGE,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_TAGS_DELETE,
@@ -232,6 +239,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_VALIDATE,
         INGEST_BACKFILL_RUN,
         INGEST_BACKFILL_WATERMARK,
+        INGEST_ALERTS_READ,
+        INGEST_ALERTS_MANAGE,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_JOBS_TAGS_WRITE,
@@ -247,6 +256,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_READ,
         INGEST_LIBRARIES_READ,
         INGEST_RUNTIME_READ,
+        INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
     "stewardship": {
@@ -261,6 +271,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_READ,
         INGEST_LIBRARIES_READ,
         INGEST_RUNTIME_READ,
+        INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
     "data_owner": {
@@ -282,6 +293,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_READ,
         INGEST_RUNTIME_VALIDATE,
         INGEST_BACKFILL_RUN,
+        INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
 }

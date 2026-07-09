@@ -560,6 +560,29 @@ instalação, o botão *Instalar biblioteca* não aparece; sem permissão de rem
 Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
 validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
 
+## Alertas e notificações
+
+A tela **Alertas** (`/alerts`) envia eventos importantes para **Teams**, **Slack** ou **webhooks
+genéricos**:
+
+- **Canais**: nome, tipo, URL do webhook (armazenada **criptografada** com Fernet e sempre
+  **mascarada** na API), **severidade mínima** (info/warning/critical) e **eventos** assinados
+  (vazio = todos). Ações: **Testar** (envia uma notificação de teste), editar, excluir.
+- **Histórico**: cada notificação com evento, severidade, canal, **status de entrega**
+  (`pending/sent/failed` + HTTP), erro e **Reenviar** em caso de falha.
+
+**Como dispara:** o worker cria notificações (`emit`) quando uma execução finaliza e as entrega
+(`dispatch`) a cada tick. Gatilhos ativos hoje: **JOB_FAILED** (job falhou/timeout, crítico),
+**JOB_ZERO_RECORDS** (carga com `lidos=0 gravados=0`, aviso) e **PIPELINE_FAILED** (pipeline
+falhou/parcial). O payload é adaptado por tipo (MessageCard do Teams, blocos do Slack, JSON
+genérico) e inclui **link para o detalhe** da execução. Eventos como cluster/worker/schema/runtime
+já existem no modelo e podem ser ligados a gatilhos futuros.
+
+Endpoints: `GET/POST/PATCH/DELETE /api/v1/alerts/channels[/{id}]`,
+`POST /api/v1/alerts/channels/{id}/test`, `GET /api/v1/alerts/notifications`,
+`POST /api/v1/alerts/notifications/{id}/resend`. Permissões: `ingest:alerts:read` (todos os
+papéis) e `ingest:alerts:manage` (admin/editor). Nunca expõe a URL/secret do webhook.
+
 ## Dashboard operacional
 
 A tela inicial (`/`) é um **dashboard operacional** com atualização automática (10s) via
