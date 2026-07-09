@@ -618,10 +618,22 @@ via `.dockerignore` e do `copytree`. A imagem sai versionada:
 `t2c-data-ingest-spark-runtime:<AAAAMMDD.HHMMSS>`. Base configurável em `RUNTIME_BASE_IMAGE`.
 
 > **Python do driver × executors:** o PySpark exige a mesma versão de Python no driver e nos
-> executors. A imagem base `apache/spark:3.5.1` traz **Python 3.8** — por isso as validações
+> executors. A imagem base `apache/spark:3.5.x` traz **Python 3.8** — por isso as validações
 > distribuídas submetem o `spark-submit` de dentro de um container Spark (via `docker exec`), e a
-> imagem runtime deve ser usada por driver **e** workers. Libs modernas (ex.: `pandas>=2.1`) exigem
-> Python ≥3.9 — ajuste `RUNTIME_BASE_IMAGE` para uma base com Python mais novo se precisar delas.
+> imagem runtime deve ser usada por driver **e** workers.
+>
+> **Versões das bibliotecas (importante):** como a base é Python 3.8, **prefira cadastrar as libs
+> sem fixar versão** — o `pip` respeita `Requires-Python` e resolve automaticamente a versão
+> compatível (ex.: `pandas` → `2.0.3`, a última com wheel para 3.8). **Não** fixe uma versão que
+> exige Python ≥3.9 (ex.: `pandas==2.2.3`), senão o build falha com “No matching distribution”.
+> Para usar libs mais novas, é preciso uma base com Python ≥3.9 (`RUNTIME_BASE_IMAGE`); no
+> Kubernetes isso é natural (imagem própria). Em Apple Silicon/arm64, o repositório *deadsnakes*
+> não tem pacotes, então instalar outro Python na base exige build por fonte/conda.
+>
+> **As libs só chegam aos workers pela imagem:** cadastrar em *Bibliotecas* e clicar *Validar*
+> **não instala** nada — é preciso **Criar build → Ativar → Aplicar aos workers** (na aba
+> *Validação do Cluster* ou em *Clusters → detalhe → Bibliotecas → Aplicar imagem ativa*). Só
+> então as libs ficam disponíveis em todos os executors e a validação fica verde.
 
 ### 3 workers locais + validação distribuída
 

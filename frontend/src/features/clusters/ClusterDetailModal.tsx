@@ -57,6 +57,10 @@ export function ClusterDetailModal({ cluster, open, onClose }: { cluster: Cluste
     mutationFn: (kind: "libraries" | "distributed-execution") => api.post(`/api/v1/clusters/${cluster.id}/${kind === "libraries" ? "validate-libraries" : "validate-distributed-execution"}`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["cluster-validations", cluster.id] }),
   });
+  const apply = useMutation({
+    mutationFn: () => api.post("/api/v1/runtime/apply", {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cluster-validations", cluster.id] }); qc.invalidateQueries({ queryKey: ["cluster-workers", cluster.id] }); },
+  });
 
   if (!open) return null;
   const detected = workers?.workers_detected ?? cluster.worker_count ?? 0;
@@ -167,13 +171,24 @@ export function ClusterDetailModal({ cluster, open, onClose }: { cluster: Cluste
                   ))}
                 </div>
               )}
+              <div className="flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50/60 px-3.5 py-2.5 text-xs text-gray-600">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0 text-brand-500" />
+                <span>As bibliotecas ficam disponíveis nos workers através da <b>imagem runtime</b>: cadastre-as em
+                  <b> Ambiente de Execução</b>, faça <b>Criar build → Ativar</b> e depois <b>Aplicar aos workers</b> (abaixo).
+                  Apenas validar não instala nada — só confere o que já está no cluster.</span>
+              </div>
               {canValidate && (
-                <button onClick={() => validate.mutate("libraries")} disabled={validate.isPending}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                  <RefreshCw size={14} /> Validar bibliotecas nos workers
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => apply.mutate()} disabled={apply.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
+                    <RefreshCw size={14} className={apply.isPending ? "animate-spin" : ""} /> Aplicar imagem ativa aos workers
+                  </button>
+                  <button onClick={() => validate.mutate("libraries")} disabled={validate.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                    Validar bibliotecas nos workers
+                  </button>
+                </div>
               )}
-              <p className="text-xs text-gray-400">A validação executa um job distribuído que importa as libs em cada executor.</p>
             </div>
           )}
 
