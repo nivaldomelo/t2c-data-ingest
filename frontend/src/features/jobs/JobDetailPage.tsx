@@ -41,12 +41,12 @@ export default function JobDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  // "Criar job e abrir código" navigates here with state.openCode -> open the workspace once.
+  // Deep-links from the Jobs cards: open the workspace or the edit modal once on arrival.
   useEffect(() => {
-    if ((location.state as { openCode?: boolean } | null)?.openCode) {
-      setWorkspaceOpen(true);
-      navigate(location.pathname, { replace: true, state: {} });
-    }
+    const s = location.state as { openCode?: boolean; openEdit?: boolean } | null;
+    if (s?.openCode) setWorkspaceOpen(true);
+    if (s?.openEdit) setEditOpen(true);
+    if (s?.openCode || s?.openEdit) navigate(location.pathname, { replace: true, state: {} });
   }, [location, navigate]);
 
   const { data: job, isLoading, error } = useQuery({

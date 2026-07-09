@@ -4,7 +4,6 @@ import { AlertTriangle, Archive } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { Modal, SecondaryButton } from "@/components/ui";
-import type { JobDetail } from "@/features/jobs/types";
 
 interface DeleteResult {
   success: boolean;
@@ -16,7 +15,7 @@ interface DeleteResult {
 export function JobDeleteDialog({
   job, open, onClose, onDeleted,
 }: {
-  job: JobDetail; open: boolean; onClose: () => void; onDeleted: () => void;
+  job: { id: number; name: string }; open: boolean; onClose: () => void; onDeleted: () => void;
 }) {
   const [reason, setReason] = useState("");
   const [blocked, setBlocked] = useState<string | null>(null);

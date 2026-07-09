@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Text, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from t2c_ingest.core.db import get_db
 from t2c_ingest.core.pagination import PageOut, PageParams
@@ -42,9 +42,12 @@ from t2c_ingest.schemas.job import (
     JobDeleteRequest,
     JobDeleteResult,
     JobDetailOut,
+    JobExecLite,
+    JobListItem,
     JobOut,
     JobRunRequest,
     JobSearchOut,
+    JobsSummaryOut,
     JobUpdate,
 )
 from t2c_ingest.services.audit import record_audit
@@ -63,36 +66,176 @@ def _job_out_with_tags(db: Session, jobs: list[JobDefinition]) -> list[JobOut]:
     return outs
 
 
-@router.get("", response_model=PageOut[JobOut])
+_ENGINE_LABEL = {"spark_cluster": "Spark", "python_worker": "Python"}
+_JOB_TYPE_LABEL = {"python": "Python", "spark_python": "Spark · Python",
+                   "spark_sql": "Spark · SQL", "spark_submit": "Spark · Submit"}
+_SORT_COLUMNS = {"name", "created_at", "updated_at", "last_execution_at", "last_status", "execution_count"}
+
+
+def _engine_kind(engine: str | None, jtype: str | None) -> str:
+    if engine == "spark_cluster":
+        return "spark"
+    if engine == "python_worker":
+        return "python"
+    return "spark" if (jtype or "").startswith("spark") else "python"
+
+
+def _engine_label(engine: str | None, jtype: str | None) -> str:
+    return _ENGINE_LABEL.get(engine or "", "Spark" if _engine_kind(engine, jtype) == "spark" else "Python")
+
+
+@router.get("/summary", response_model=JobsSummaryOut)
+def jobs_summary(
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
+) -> JobsSummaryOut:
+    """Platform-wide counters for the Jobs summary cards (non-deleted jobs)."""
+    from datetime import timedelta
+
+    active_only = JobDefinition.deleted_at.is_(None)
+    total = db.scalar(select(func.count(JobDefinition.id)).where(active_only)) or 0
+    spark = db.scalar(
+        select(func.count(JobDefinition.id)).where(active_only, JobDefinition.type.like("spark%"))
+    ) or 0
+    active = db.scalar(
+        select(func.count(JobDefinition.id)).where(active_only, JobDefinition.is_active.is_(True))
+    ) or 0
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_failures = db.scalar(
+        select(func.count(func.distinct(Execution.job_id))).where(
+            Execution.status.in_(("failed", "timeout")), Execution.created_at >= since
+        )
+    ) or 0
+    return JobsSummaryOut(
+        total_jobs=total, spark_jobs=spark, python_jobs=total - spark,
+        active_jobs=active, recent_failures=recent_failures,
+    )
+
+
+@router.get("", response_model=PageOut[JobListItem])
 def list_jobs(
     params: PageParams = Depends(),
+    job_type: str | None = Query(None, alias="job_type"),
     type: str | None = None,
-    is_active: bool | None = None,
+    engine: str | None = None,
+    is_active: bool | None = Query(None),
+    active: bool | None = Query(None),
+    last_status: str | None = None,
+    source_connection_id: int | None = None,
+    target_connection_id: int | None = None,
     tags: str | None = Query(None, description="Slugs/nomes separados por vírgula"),
+    search: str | None = None,
+    sort_by: str = Query("name"),
+    sort_order: str = Query("asc"),
     include_deleted: bool = Query(False, description="Inclui jobs excluídos (arquivados)"),
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
-) -> PageOut[JobOut]:
-    stmt = select(JobDefinition)
-    count_stmt = select(func.count(JobDefinition.id))
+) -> PageOut[JobListItem]:
+    jtype = job_type or type
+    active_flag = active if active is not None else is_active
+
+    # Per-job execution aggregate (latest id, count, latest timestamp) — one grouped scan.
+    ea = (
+        select(
+            Execution.job_id.label("job_id"),
+            func.max(Execution.id).label("last_id"),
+            func.count().label("cnt"),
+            func.max(func.coalesce(Execution.started_at, Execution.created_at)).label("last_at"),
+        )
+        .where(Execution.job_id.is_not(None))
+        .group_by(Execution.job_id)
+        .subquery()
+    )
+    le = aliased(Execution)  # the latest execution row (joined on last_id)
+
+    filters = []
     if not include_deleted:
-        stmt = stmt.where(JobDefinition.deleted_at.is_(None))
-        count_stmt = count_stmt.where(JobDefinition.deleted_at.is_(None))
-    if type:
-        stmt = stmt.where(JobDefinition.type == type)
-        count_stmt = count_stmt.where(JobDefinition.type == type)
-    if is_active is not None:
-        stmt = stmt.where(JobDefinition.is_active == is_active)
-        count_stmt = count_stmt.where(JobDefinition.is_active == is_active)
+        filters.append(JobDefinition.deleted_at.is_(None))
+    if jtype:
+        filters.append(JobDefinition.type == jtype)
+    if engine:
+        filters.append(JobDefinition.engine == engine)
+    if active_flag is not None:
+        filters.append(JobDefinition.is_active.is_(active_flag))
+    if source_connection_id:
+        filters.append(JobDefinition.source_connection_id == source_connection_id)
+    if target_connection_id:
+        filters.append(JobDefinition.target_connection_id == target_connection_id)
+    if last_status:
+        filters.append(le.status == last_status)
     if tags:
         ids = job_ids_with_tags(db, tags.split(",")) or {-1}
-        stmt = stmt.where(JobDefinition.id.in_(ids))
-        count_stmt = count_stmt.where(JobDefinition.id.in_(ids))
+        filters.append(JobDefinition.id.in_(ids))
+    if search:
+        like = f"%{search.strip()}%"
+        tag_ids = job_ids_with_tags(db, [search.strip()])
+        conds = [
+            JobDefinition.name.ilike(like), JobDefinition.description.ilike(like),
+            JobDefinition.type.ilike(like), JobDefinition.engine.ilike(like),
+            func.cast(JobDefinition.arguments, Text).ilike(like),
+        ]
+        if tag_ids:
+            conds.append(JobDefinition.id.in_(tag_ids))
+        filters.append(or_(*conds))
+
+    base = (
+        select(JobDefinition, ea.c.cnt, ea.c.last_at, le.id, le.status, le.started_at, le.duration_seconds)
+        .outerjoin(ea, ea.c.job_id == JobDefinition.id)
+        .outerjoin(le, le.id == ea.c.last_id)
+    )
+    for f in filters:
+        base = base.where(f)
+
+    count_stmt = select(func.count(JobDefinition.id)).select_from(JobDefinition).outerjoin(ea, ea.c.job_id == JobDefinition.id).outerjoin(le, le.id == ea.c.last_id)
+    for f in filters:
+        count_stmt = count_stmt.where(f)
     total = db.scalar(count_stmt) or 0
-    rows = db.scalars(
-        stmt.order_by(JobDefinition.name).offset(params.offset).limit(params.limit)
-    ).all()
-    return PageOut.build(_job_out_with_tags(db, rows), total, params)
+
+    # Sorting.
+    sort_col = {
+        "name": JobDefinition.name, "created_at": JobDefinition.created_at,
+        "updated_at": JobDefinition.updated_at, "last_execution_at": ea.c.last_at,
+        "last_status": le.status, "execution_count": ea.c.cnt,
+    }.get(sort_by if sort_by in _SORT_COLUMNS else "name", JobDefinition.name)
+    direction = (lambda c: c.desc()) if sort_order == "desc" else (lambda c: c.asc())
+    base = base.order_by(direction(sort_col).nulls_last(), JobDefinition.name.asc())
+
+    rows = db.execute(base.offset(params.offset).limit(params.limit)).all()
+
+    jobs = [r[0] for r in rows]
+    ids = [j.id for j in jobs]
+    tags_map = tags_for_jobs(db, ids)
+    # Batch avg success duration + connection names for the page.
+    avg_map: dict[int, float] = {}
+    if ids:
+        for jid, avg in db.execute(
+            select(Execution.job_id, func.avg(Execution.duration_seconds))
+            .where(Execution.job_id.in_(ids), Execution.status == "success")
+            .group_by(Execution.job_id)
+        ).all():
+            if avg is not None:
+                avg_map[jid] = round(float(avg), 1)
+    conn_ids = {cid for j in jobs for cid in (j.source_connection_id, j.target_connection_id) if cid}
+    conn_map: dict[int, str] = {}
+    if conn_ids:
+        conn_map = {c.id: c.name for c in db.scalars(select(Connection).where(Connection.id.in_(conn_ids))).all()}
+
+    items = []
+    for job, cnt, last_at, le_id, le_status, le_started, le_dur in rows:
+        last_exec = JobExecLite(id=le_id, status=le_status, started_at=le_started, duration_seconds=le_dur) if le_id else None
+        items.append(JobListItem(
+            id=job.id, name=job.name, description=job.description, type=job.type,
+            job_type_label=_JOB_TYPE_LABEL.get(job.type, job.type),
+            engine=job.engine, engine_label=_engine_label(job.engine, job.type),
+            engine_kind=_engine_kind(job.engine, job.type), script_path=job.script_path,
+            is_active=job.is_active, retry_count=job.retry_count,
+            source_connection_name=conn_map.get(job.source_connection_id) or _arg_connection_name(job, "--source-connection"),
+            target_connection_name=conn_map.get(job.target_connection_id) or _arg_connection_name(job, "--target-connection"),
+            tags=[TagLite.model_validate(t) for t in tags_map.get(job.id, [])],
+            last_execution=last_exec, avg_success_duration_seconds=avg_map.get(job.id),
+            created_at=job.created_at, updated_at=job.updated_at,
+        ))
+    return PageOut.build(items, total, params)
 
 
 @router.get("/search", response_model=list[JobSearchOut])

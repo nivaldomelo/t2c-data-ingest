@@ -128,6 +128,23 @@ login no t2c_data e reutilize o token.
 
 ### Detalhe do job (abas)
 
+A listagem de **Jobs** é uma **grade de cards paginada** (server-side), pensada para ~mil jobs:
+
+- **Cards de resumo** no topo: total, Spark, Python, ativos e falhas recentes (7 dias) —
+  agregações globais em `GET /api/v1/jobs/summary`.
+- **Card por job** com ícone da engine (⚡ Spark laranja · 🐍 Python azul), nome, descrição (2
+  linhas), tipo·engine, `origem → destino`, tags (3 + `+N`), status ativo, **última execução**
+  (badge + data) e **tempo médio de sucesso**. Ações: **Abrir**, **Executar** e menu (⋯) com
+  **Abrir código** (workspace), **Editar** e **Excluir** — cada uma respeitando permissões.
+- **Filtros** (server-side): busca (nome/descrição/tipo/engine/tags/argumentos), engine, tipo,
+  ativo/inativo, último status e tags; **ordenação** (nome, mais recentes, atualizados, última
+  execução, mais executados); **tamanho de página** (12/24/48/96, padrão 24) e paginação
+  "Mostrando X–Y de N · Página P de T". Alternância **Cards | Tabela**.
+
+Performance: a lista faz uma única varredura agregada de execuções (última execução, contagem e
+data por job) e resolve tags/conexões/tempo-médio em lote (sem N+1); índices em
+`name`/`engine`/`type`/`is_active`/`deleted_at`.
+
 ### Criar um job (Novo Job)
 
 Na tela **Jobs**, o botão **Novo Job** (canto superior direito; só aparece com

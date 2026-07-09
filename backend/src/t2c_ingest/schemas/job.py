@@ -92,6 +92,44 @@ class JobConnectionInfo(BaseModel):
     last_test_status: str | None = None
 
 
+class JobExecLite(BaseModel):
+    id: int
+    status: str
+    started_at: datetime | None = None
+    duration_seconds: int | None = None
+
+
+class JobListItem(BaseModel):
+    """Card-friendly job representation for the paginated Jobs grid (batched, no N+1)."""
+
+    id: int
+    name: str
+    description: str | None = None
+    type: str
+    job_type_label: str
+    engine: str | None = None
+    engine_label: str
+    engine_kind: str  # "spark" | "python" — drives the card icon
+    script_path: str | None = None
+    is_active: bool
+    retry_count: int | None = None
+    source_connection_name: str | None = None
+    target_connection_name: str | None = None
+    tags: list[TagLite] = Field(default_factory=list)
+    last_execution: JobExecLite | None = None
+    avg_success_duration_seconds: float | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class JobsSummaryOut(BaseModel):
+    total_jobs: int = 0
+    spark_jobs: int = 0
+    python_jobs: int = 0
+    active_jobs: int = 0
+    recent_failures: int = 0
+
+
 class JobDetailOut(JobOut):
     """Job detail enriched with connection names and execution stats for the overview tab."""
 
