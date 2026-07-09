@@ -135,6 +135,9 @@ def _fire_one() -> bool:
 
 
 def main() -> None:
+    from t2c_ingest.core.bootstrap import enforce_secure_config
+
+    enforce_secure_config()  # refuse to run under insecure prod defaults
     poll = settings.scheduler_poll_interval_seconds
     print(f"[scheduler] started; tz={settings.scheduler_timezone}; polling every {poll}s")
     while True:

@@ -140,7 +140,10 @@ ALL_PERMISSIONS = {
 # Mapping from t2c_data role -> ingest permissions.
 # IMPORTANT: viewer, stewardship and data_owner must NOT receive administrative permissions,
 # matching the rule already enforced in t2c_data.
-ROLE_PERMISSIONS: dict[str, set[str]] = {
+# DEPRECATED / UNUSED. The live access model is resolve_ingest_permissions() (admin-only
+# writes, granted users read-only). This legacy per-role map is NOT consulted anywhere — do
+# NOT wire it back into deps.py, or editor/data_owner would silently regain write access.
+_DEPRECATED_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "admin": {
         INGEST_ADMIN,
         INGEST_READ,
@@ -318,7 +321,9 @@ READ_ONLY_PERMISSIONS = frozenset({
     INGEST_CLUSTERS_READ,
     INGEST_AIRFLOW_READ,
     INGEST_CONNECTIONS_READ,
-    INGEST_JOBS_CODE_READ,
+    # NOTE: INGEST_JOBS_CODE_READ is deliberately NOT here — job source can embed hardcoded
+    # credentials, so raw code is admin-only (consistent with masking variable/connection
+    # secrets from view-only users). Re-add if code visibility is desired for viewers.
     INGEST_SCHEDULES_READ,
     INGEST_CONTROL_READ,
     INGEST_VARIABLES_READ,
@@ -348,11 +353,3 @@ def resolve_ingest_permissions(role_names: set[str], has_access: bool) -> set[st
     if has_access:
         return set(READ_ONLY_PERMISSIONS)
     return set()
-
-
-def permissions_for_roles(role_names: set[str]) -> set[str]:
-    """Deprecated. Admins get everything, everyone else gets nothing.
-
-    Use :func:`resolve_ingest_permissions` with the explicit access flag instead.
-    """
-    return resolve_ingest_permissions(role_names, has_access=False)

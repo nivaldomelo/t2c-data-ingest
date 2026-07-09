@@ -343,6 +343,9 @@ def _process_runtime_jobs() -> bool:
 
 
 def main() -> None:
+    from t2c_ingest.core.bootstrap import enforce_secure_config
+
+    enforce_secure_config()  # refuse to run under insecure prod defaults (worker decrypts secrets)
     poll = settings.worker_poll_interval_seconds
     print(f"[worker] started; polling every {poll}s; spark master={settings.spark_master_url}")
     while True:

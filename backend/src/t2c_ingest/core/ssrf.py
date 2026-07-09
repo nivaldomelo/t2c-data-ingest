@@ -18,6 +18,14 @@ def _ip_is_internal(ip: str) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return True  # not a parseable IP -> treat as unsafe
+    # Unwrap IPv4-mapped/6to4 IPv6 so an internal IPv4 can't hide inside an IPv6 literal.
+    v6 = getattr(addr, "version", 4) == 6
+    if v6:
+        mapped = getattr(addr, "ipv4_mapped", None) or getattr(addr, "sixtofour", None)
+        if mapped is not None:
+            addr = mapped
+        elif addr in ipaddress.ip_network("2002::/16"):  # 6to4 wrapper
+            return True
     return (
         addr.is_private
         or addr.is_loopback
