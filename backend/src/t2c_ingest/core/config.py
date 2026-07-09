@@ -125,6 +125,10 @@ class Settings(BaseSettings):
     library_pip_user: bool = Field(default=True, validation_alias="LIBRARY_PIP_USER")
     library_install_timeout: int = Field(default=600, validation_alias="LIBRARY_INSTALL_TIMEOUT")
 
+    # ── Data quality reconciliation (query source/target DBs after a run) ──
+    dq_reconcile_enabled: bool = Field(default=True, validation_alias="DQ_RECONCILE_ENABLED")
+    dq_reconcile_timeout: int = Field(default=8, validation_alias="DQ_RECONCILE_TIMEOUT")
+
     # ── Cluster runtime image (libraries + jobs baked into a versioned image) ──
     runtime_image_name: str = Field(default="t2c-data-ingest-spark-runtime", validation_alias="RUNTIME_IMAGE_NAME")
     runtime_base_image: str = Field(default="apache/spark:3.5.1", validation_alias="RUNTIME_BASE_IMAGE")

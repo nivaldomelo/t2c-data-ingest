@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ShieldCheck, TrendingDown, TrendingUp, X, XCircle } from "lucide-react";
+import { CheckCircle2, MinusCircle, ShieldCheck, TrendingDown, TrendingUp, X, XCircle } from "lucide-react";
 
 import { api, type Page } from "@/lib/api";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
@@ -20,10 +20,12 @@ const OVERALL: Record<string, { label: string; tone: string }> = {
   warn: { label: "Atenção", tone: "border-amber-200 bg-amber-50 text-amber-700" },
   fail: { label: "Falha", tone: "border-red-200 bg-red-50 text-red-700" },
 };
-const CHECK_TONE: Record<string, string> = { pass: "text-emerald-600", warn: "text-amber-600", fail: "text-red-600" };
+const CHECK_TONE: Record<string, string> = { pass: "text-emerald-600", warn: "text-amber-600", fail: "text-red-600", skip: "text-gray-400" };
 const CHECK_LABEL: Record<string, string> = {
   registros_lidos: "Registros lidos", gravados_vs_lidos: "Gravados × lidos",
   watermark_avancou: "Watermark avançou", status_job: "Status do job",
+  reconcile_count: "Contagem origem × destino", pk_not_null: "PK sem nulos",
+  pk_duplicates: "PK sem duplicidade",
 };
 function fmt(t: string): string { return new Date(t).toLocaleString("pt-BR"); }
 function nf(n: number): string { return n.toLocaleString("pt-BR"); }
@@ -87,8 +89,8 @@ export default function DataQualityPage() {
                         <div className="space-y-1">
                           {(r.checks ?? []).map((c) => (
                             <div key={c.name} className="flex items-center gap-2 text-sm">
-                              {c.status === "pass" ? <CheckCircle2 size={14} className="text-emerald-500" /> : c.status === "fail" ? <XCircle size={14} className="text-red-500" /> : <X size={14} className="text-amber-500" />}
-                              <span className="w-40 font-medium text-gray-700">{CHECK_LABEL[c.name] ?? c.name}</span>
+                              {c.status === "pass" ? <CheckCircle2 size={14} className="text-emerald-500" /> : c.status === "fail" ? <XCircle size={14} className="text-red-500" /> : c.status === "skip" ? <MinusCircle size={14} className="text-gray-400" /> : <X size={14} className="text-amber-500" />}
+                              <span className="w-48 font-medium text-gray-700">{CHECK_LABEL[c.name] ?? c.name}</span>
                               <span className={cn("text-xs font-medium", CHECK_TONE[c.status])}>{c.status}</span>
                               <span className="text-xs text-gray-400">{c.detail}</span>
                             </div>

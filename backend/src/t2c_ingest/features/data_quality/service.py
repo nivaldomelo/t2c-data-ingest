@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from t2c_ingest.core.config import settings
+from t2c_ingest.features.data_quality import reconciliation
 from t2c_ingest.features.executions.log_parser import parse_connections, parse_ingest_summary
 from t2c_ingest.models.data_quality import DqResult
 from t2c_ingest.models.execution import Execution, ExecutionLog
@@ -23,6 +24,14 @@ def _to_int(v) -> int | None:
         return int(v)
     except (TypeError, ValueError):
         return None
+
+
+def _overall(checks: list[dict]) -> str:
+    if any(c["status"] == "fail" for c in checks):
+        return "fail"
+    if any(c["status"] == "warn" for c in checks):
+        return "warn"
+    return "pass"
 
 
 def _evaluate_checks(summary: dict) -> tuple[list[dict], str]:
@@ -57,9 +66,68 @@ def _evaluate_checks(summary: dict) -> tuple[list[dict], str]:
     checks.append({"name": "status_job", "status": "pass" if status.startswith("SUC") else "fail",
                    "detail": f"status={summary.get('status')}"})
 
-    overall = "fail" if any(c["status"] == "fail" for c in checks) else (
-        "warn" if any(c["status"] == "warn" for c in checks) else "pass")
-    return checks, overall
+    return checks, _overall(checks)
+
+
+def _resolve_pk(db: Session, table: str | None, source_type: str | None, target_type: str | None) -> list[str]:
+    """Primary-key columns for ``table`` from the control table (``colunas_chave``).
+
+    A table may appear under several routes (e.g. POSTGRES->BRONZE and POSTGRES->MYSQL) with
+    different keys; prefer the row whose origem/destino matches this job's connections, so we
+    validate the key actually used for THIS target.
+    """
+    if not table:
+        return []
+    try:
+        from t2c_ingest.features.ingestion_control.models import IngestionControl
+
+        rows = db.execute(
+            select(IngestionControl.colunas_chave, IngestionControl.origem, IngestionControl.destino)
+            .where(IngestionControl.nome_tabela == table)
+        ).all()
+        if not rows:
+            return []
+        raw = None
+        st, tt = (source_type or "").upper(), (target_type or "").upper()
+        for chave, origem, destino in rows:
+            if st and (origem or "").upper() == st and tt and (destino or "").upper() == tt:
+                raw = chave
+                break
+        if raw is None:
+            raw = rows[0][0]  # fall back to the first defined key
+        return [c.strip() for c in (raw or "").split(",") if c.strip()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _reconcile(db: Session, execution: Execution, summary: dict) -> list[dict]:
+    """Best-effort real reconciliation against the source/target DBs. Never raises."""
+    if not settings.dq_reconcile_enabled:
+        return []
+    try:
+        from t2c_ingest.features.connections.repository import get_connection_by_ref
+        from t2c_ingest.features.connections.worker_support import _extract_refs
+        from t2c_ingest.models.job import JobDefinition
+
+        job = db.get(JobDefinition, execution.job_id) if execution.job_id else None
+        refs = _extract_refs(job.arguments if job else [])
+        source_conn = get_connection_by_ref(db, refs["SOURCE_"]) if "SOURCE_" in refs else None
+        target_conn = get_connection_by_ref(db, refs["TARGET_"]) if "TARGET_" in refs else None
+
+        # The INGEST_SUMMARY table is the source table; the controlled ingest writes to the same
+        # schema.table name on the target (see postgres_to_mysql_controlled_ingest).
+        table = summary.get("table")
+        pk = _resolve_pk(
+            db, table,
+            source_conn.connection_type if source_conn else None,
+            target_conn.connection_type if target_conn else None,
+        )
+        return reconciliation.run(
+            source_conn, table, target_conn, table, pk, summary.get("tipo"),
+        )
+    except Exception as exc:  # noqa: BLE001 - reconciliation must never break the run
+        print(f"[dq] reconciliation skipped: {exc}")
+        return []
 
 
 def evaluate_execution(db: Session, execution: Execution) -> DqResult | None:
@@ -96,6 +164,10 @@ def evaluate_execution(db: Session, execution: Execution) -> DqResult | None:
     first_result = None
     for summary in summaries:
         checks, overall = _evaluate_checks(summary)
+        recon = _reconcile(db, execution, summary)
+        if recon:
+            checks = checks + recon
+            overall = _overall(checks)
         lidos = _to_int(summary.get("lidos"))
         gravados = _to_int(summary.get("gravados"))
         result = DqResult(
