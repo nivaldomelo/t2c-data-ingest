@@ -21,6 +21,7 @@ import ExecutionDetailPage from "@/features/executions/ExecutionDetailPage";
 import BackfillsPage from "@/features/backfill/BackfillsPage";
 import AlertsPage from "@/features/alerts/AlertsPage";
 import AuditPage from "@/features/audit/AuditPage";
+import DataQualityPage from "@/features/data-quality/DataQualityPage";
 import AirflowPage from "@/features/airflow/AirflowPage";
 
 export default function App() {
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="/backfills" element={<BackfillsPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/audit" element={<AuditPage />} />
+        <Route path="/data-quality" element={<DataQualityPage />} />
         <Route path="/airflow" element={<AirflowPage />} />
       </Route>
       <Route path="/login" element={<Navigate to="/" replace />} />

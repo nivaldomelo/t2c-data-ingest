@@ -560,6 +560,23 @@ instalação, o botão *Instalar biblioteca* não aparece; sem permissão de rem
 Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
 validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
 
+## Data Quality e linhagem
+
+A tela **Data Quality** (`/data-quality`, permissão `ingest:quality:read`) mostra as **validações
+de qualidade por execução**, derivadas do `INGEST_SUMMARY` que o worker emite. Ao finalizar uma
+execução de job, o worker avalia **uma linha por tabela** (jobs multi-tabela geram vários
+`INGEST_SUMMARY`) e grava em `dq_results`:
+
+- **registros_lidos** (> 0), **gravados × lidos** (FULL: iguais; incremental: gravados ≤ lidos),
+  **watermark avançou** (incremental) e **status do job** — com resultado geral `pass/warn/fail`.
+- Cards de resumo (7 dias): avaliações, ok/atenção/falha e total de registros lidos/gravados.
+
+**Linhagem no t2c_data:** para cada tabela avaliada, o ingest também escreve uma linha em
+**`t2c_data.ingest_lineage`** (schema do produto base) com job, pipeline, conexão/tipo de origem
+e destino, tabela, registros lidos/gravados, tipo de ingestão, status e horário — permitindo que o
+`t2c_data` construa linhagem/metadados a partir das execuções reais. É best-effort e nunca quebra
+a execução. Endpoints: `GET /api/v1/data-quality/{summary,results}`.
+
 ## Auditoria (governança)
 
 A tela **Auditoria** (`/audit`, **somente admin** — `ingest:admin`) é a trilha de todas as ações

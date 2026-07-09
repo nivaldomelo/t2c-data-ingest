@@ -196,7 +196,19 @@ def _run_one(db, execution: Execution) -> None:
     finally:
         execution.finished_at = _now()
         db.commit()
+        _evaluate_data_quality(db, execution)
         _emit_execution_alert(db, execution)
+
+
+def _evaluate_data_quality(db, execution) -> None:
+    """Compute DQ checks + push lineage to t2c_data for a finished job execution."""
+    try:
+        from t2c_ingest.features.data_quality.service import evaluate_execution
+
+        if execution.status in ("success", "failed"):
+            evaluate_execution(db, execution)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] data-quality error: {exc}")
 
 
 def _emit_execution_alert(db, execution) -> None:

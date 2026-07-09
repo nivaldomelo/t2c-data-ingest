@@ -55,6 +55,8 @@ INGEST_LIBRARIES_READ = "ingest:libraries:read"
 INGEST_LIBRARIES_INSTALL = "ingest:libraries:install"
 INGEST_LIBRARIES_UNINSTALL = "ingest:libraries:uninstall"
 INGEST_LIBRARIES_MANAGE = "ingest:libraries:manage"
+# Data quality / lineage.
+INGEST_QUALITY_READ = "ingest:quality:read"
 # Alerts / notifications (channels + delivery).
 INGEST_ALERTS_READ = "ingest:alerts:read"
 INGEST_ALERTS_MANAGE = "ingest:alerts:manage"
@@ -126,6 +128,7 @@ ALL_PERMISSIONS = {
     INGEST_RUNTIME_VALIDATE,
     INGEST_BACKFILL_RUN,
     INGEST_BACKFILL_WATERMARK,
+    INGEST_QUALITY_READ,
     INGEST_ALERTS_READ,
     INGEST_ALERTS_MANAGE,
     INGEST_TAGS_READ,
@@ -191,6 +194,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_VALIDATE,
         INGEST_BACKFILL_RUN,
         INGEST_BACKFILL_WATERMARK,
+        INGEST_QUALITY_READ,
         INGEST_ALERTS_READ,
         INGEST_ALERTS_MANAGE,
         INGEST_TAGS_READ,
@@ -239,6 +243,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_VALIDATE,
         INGEST_BACKFILL_RUN,
         INGEST_BACKFILL_WATERMARK,
+        INGEST_QUALITY_READ,
         INGEST_ALERTS_READ,
         INGEST_ALERTS_MANAGE,
         INGEST_TAGS_READ,
@@ -256,6 +261,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_READ,
         INGEST_LIBRARIES_READ,
         INGEST_RUNTIME_READ,
+        INGEST_QUALITY_READ,
         INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
@@ -271,6 +277,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_READ,
         INGEST_LIBRARIES_READ,
         INGEST_RUNTIME_READ,
+        INGEST_QUALITY_READ,
         INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
@@ -293,6 +300,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_READ,
         INGEST_RUNTIME_VALIDATE,
         INGEST_BACKFILL_RUN,
+        INGEST_QUALITY_READ,
         INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
