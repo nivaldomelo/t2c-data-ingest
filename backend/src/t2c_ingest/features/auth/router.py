@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections import defaultdict
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,9 +19,39 @@ from t2c_ingest.schemas.auth import LoginRequest, MeOut, TokenOut
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# In-memory login throttle (per process). Sliding window of failed attempts keyed by email+IP.
+# A best-effort brute-force/credential-stuffing brake; a shared store (Redis) would harden it
+# across replicas.
+_login_attempts: dict[tuple[str, str], list[float]] = defaultdict(list)
+
+
+def _throttle_key(email: str, request: Request | None) -> tuple[str, str]:
+    ip = (request.client.host if request and request.client else "unknown")
+    return ((email or "").strip().lower(), ip)
+
+
+def _check_throttle(key: tuple[str, str]) -> None:
+    now = time.monotonic()
+    window = settings.login_window_seconds
+    attempts = [t for t in _login_attempts[key] if now - t < window]
+    _login_attempts[key] = attempts
+    if len(attempts) >= settings.login_max_attempts:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas de login. Tente novamente em alguns minutos.",
+        )
+
+
+def _record_failure(key: tuple[str, str]) -> None:
+    _login_attempts[key].append(time.monotonic())
+
+
+def _clear_failures(key: tuple[str, str]) -> None:
+    _login_attempts.pop(key, None)
+
 
 @router.post("/login", response_model=TokenOut)
-async def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenOut:
+async def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenOut:
     """Authenticate a user.
 
     - ``AUTH_MODE=direct`` (default): verify the password against t2c_data.users in the shared
@@ -29,24 +61,34 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenOu
     """
     if settings.auth_mode.strip().lower() == "proxy":
         return await _login_via_proxy(payload)
-    return _login_direct(payload, db)
+    return _login_direct(payload, db, request)
 
 
-def _login_direct(payload: LoginRequest, db: Session) -> TokenOut:
+def _login_direct(payload: LoginRequest, db: Session, request: Request | None = None) -> TokenOut:
+    key = _throttle_key(payload.email, request)
+    _check_throttle(key)
+
     user = db.scalar(select(ReferenceUser).where(ReferenceUser.email == payload.email.strip()))
     # Constant-ish path: same error whether the user is missing or the password is wrong.
     if not user or not verify_password(payload.password, user.password_hash or ""):
+        _record_failure(key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="E-mail ou senha inválidos"
         )
     if not user.is_active:
+        _record_failure(key)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo"
         )
-    # DEV SIMPLIFICATION: MFA is not enforced in direct mode. Users with MFA enabled in
-    # t2c_data still log in here without a code. Use AUTH_MODE=proxy for full MFA handling.
-    if user.mfa_enabled:
-        logger.warning("Usuário %s tem MFA habilitado; ignorado no login direto (dev).", user.email)
+    # MFA: direct mode cannot perform the second-factor challenge. Fail closed for MFA-enabled
+    # users (they must authenticate via proxy mode, which delegates the full MFA flow to
+    # t2c_data). AUTH_ALLOW_MFA_BYPASS=true restores the legacy dev bypass.
+    if user.mfa_enabled and not settings.auth_allow_mfa_bypass:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este usuário tem MFA habilitado. Faça login pelo t2c_data (AUTH_MODE=proxy).",
+        )
+    _clear_failures(key)
     token = create_access_token(user.email, token_version=int(user.token_version or 0))
     return TokenOut(access_token=token)
 
@@ -97,4 +139,6 @@ def me(current_user: CurrentUser = Depends(get_current_user)) -> MeOut:
         name=current_user.name,
         roles=sorted(current_user.roles),
         permissions=sorted(current_user.permissions),
+        is_admin=current_user.is_admin,
+        has_access=current_user.has_access,
     )

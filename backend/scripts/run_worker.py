@@ -244,8 +244,23 @@ def _dispatch_alerts() -> None:
         print(f"[worker] alert dispatch error: {exc}")
 
 
+# Keys that must NEVER reach a job subprocess: the JWT signing secret and the Fernet key used
+# to encrypt every connection password would let a job forge admin tokens and decrypt all
+# stored secrets (and the job's stdout is captured verbatim into execution logs). No job needs
+# them. DATABASE_URL is intentionally kept: the control-table-driven ingest reads it.
+_SECRET_ENV_EXACT = {"JWT_SECRET_KEY", "CONNECTION_SECRET_KEY"}
+_SECRET_ENV_MARKERS = ("SECRET", "TOKEN", "PRIVATE_KEY")
+
+
 def _os_environ() -> dict:
-    return dict(os.environ)
+    """Base environment for job subprocesses, with the backend's own secrets stripped."""
+    clean: dict = {}
+    for k, v in os.environ.items():
+        up = k.upper()
+        if up in _SECRET_ENV_EXACT or any(m in up for m in _SECRET_ENV_MARKERS):
+            continue
+        clean[k] = v
+    return clean
 
 
 def _advance_pipelines() -> None:

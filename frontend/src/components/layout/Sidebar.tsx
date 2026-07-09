@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Tags as TagsIcon,
+  Users,
   Variable,
   Wind,
   Workflow,
@@ -102,6 +103,14 @@ const GROUPS: NavGroup[] = [
     items: [
       { to: "/data-quality", label: "Data Quality", icon: ShieldAlert, perm: "ingest:quality:read" },
       { to: "/audit", label: "Auditoria", icon: ShieldCheck, perm: "ingest:admin" },
+    ],
+  },
+  {
+    key: "administracao",
+    label: "Administração",
+    icon: Users,
+    items: [
+      { to: "/access", label: "Usuários & Acessos", icon: Users, perm: "ingest:admin" },
     ],
   },
 ];

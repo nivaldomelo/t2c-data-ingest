@@ -15,8 +15,15 @@ def _fernet() -> Fernet:
     CONNECTION_SECRET_KEY in production; in dev it falls back to the JWT secret so the app
     works out of the box (connection passwords are still encrypted at rest, never plaintext).
     """
-    secret = (settings.connection_secret_key or settings.jwt_secret_key or "change-me").encode()
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
+    secret = settings.connection_secret_key or settings.jwt_secret_key
+    if not secret:
+        if not settings.is_dev:
+            raise RuntimeError(
+                "CONNECTION_SECRET_KEY (ou JWT_SECRET_KEY) é obrigatório fora de dev para "
+                "criptografia em repouso."
+            )
+        secret = "change-me"
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
     return Fernet(key)
 
 

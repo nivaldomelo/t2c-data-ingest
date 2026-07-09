@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from t2c_ingest.features.access.router import router as access_router
 from t2c_ingest.features.airflow_migration.router import router as airflow_router
 from t2c_ingest.features.auth.router import router as auth_router
 from t2c_ingest.features.alerts.router import router as alerts_router
@@ -25,6 +26,7 @@ from t2c_ingest.features.tags.router import router as tags_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router)
+api_router.include_router(access_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(clusters_router)
 api_router.include_router(cluster_validations_router)

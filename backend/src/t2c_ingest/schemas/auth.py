@@ -20,3 +20,5 @@ class MeOut(BaseModel):
     name: str | None = None
     roles: list[str]
     permissions: list[str]
+    is_admin: bool = False
+    has_access: bool = False

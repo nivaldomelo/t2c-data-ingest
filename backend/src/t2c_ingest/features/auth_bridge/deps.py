@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -13,8 +13,9 @@ from t2c_ingest.core.security import decode_token_payload
 from t2c_ingest.features.auth_bridge.models import ReferenceUser
 from t2c_ingest.features.auth_bridge.permissions import (
     ADMIN_ROLE_NAMES,
-    permissions_for_roles,
+    resolve_ingest_permissions,
 )
+from t2c_ingest.models.access import IngestUserAccess
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -26,6 +27,7 @@ class CurrentUser:
     name: str | None
     roles: set[str] = field(default_factory=set)
     permissions: set[str] = field(default_factory=set)
+    has_access: bool = False
 
     @property
     def is_admin(self) -> bool:
@@ -64,12 +66,23 @@ def get_current_user(
         )
 
     role_names = {r.name for r in user.roles}
+    is_admin = bool(role_names & ADMIN_ROLE_NAMES)
+    # Admins always have access; everyone else needs an active grant in the allowlist.
+    granted = is_admin or bool(
+        db.scalar(
+            select(IngestUserAccess.id).where(
+                func.lower(IngestUserAccess.email) == user.email.lower(),
+                IngestUserAccess.active.is_(True),
+            ).limit(1)
+        )
+    )
     return CurrentUser(
         id=user.id,
         email=user.email,
         name=user.name or user.full_name,
         roles=role_names,
-        permissions=permissions_for_roles(role_names),
+        permissions=resolve_ingest_permissions(role_names, granted),
+        has_access=granted,
     )
 
 

@@ -309,12 +309,50 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
 # Roles that are administrators of the base platform always get full ingest access.
 ADMIN_ROLE_NAMES = {"admin", "superadmin", "owner"}
 
+# View-only permission set: every read permission and nothing that mutates, runs or reveals
+# secrets. Granted to any user an admin has explicitly allowed into the tool. Excludes
+# INGEST_ADMIN and INGEST_VARIABLES_SECRET_READ.
+READ_ONLY_PERMISSIONS = frozenset({
+    INGEST_READ,
+    INGEST_LOGS_READ,
+    INGEST_CLUSTERS_READ,
+    INGEST_AIRFLOW_READ,
+    INGEST_CONNECTIONS_READ,
+    INGEST_JOBS_CODE_READ,
+    INGEST_SCHEDULES_READ,
+    INGEST_CONTROL_READ,
+    INGEST_VARIABLES_READ,
+    INGEST_PIPELINES_READ,
+    INGEST_LIBRARIES_READ,
+    INGEST_QUALITY_READ,
+    INGEST_ALERTS_READ,
+    INGEST_RUNTIME_READ,
+    INGEST_TAGS_READ,
+})
 
-def permissions_for_roles(role_names: set[str]) -> set[str]:
-    """Resolve the effective ingest permissions for a set of t2c_data role names."""
+
+def resolve_ingest_permissions(role_names: set[str], has_access: bool) -> set[str]:
+    """Access model for the ingest tool.
+
+    - t2c_data admin roles (admin/superadmin/owner) -> FULL permissions: only admins can
+      create, run, edit or delete jobs, pipelines, connections, libraries, etc.
+    - any other user an admin has explicitly granted access to -> READ-ONLY (view everything,
+      change nothing).
+    - everyone else -> no access at all (empty set), even though credentials are shared with
+      t2c_data. Access is opt-in and admin-managed.
+
+    The legacy per-role grants (editor/data_owner/…) intentionally no longer apply.
+    """
     if role_names & ADMIN_ROLE_NAMES:
         return set(ALL_PERMISSIONS)
-    granted: set[str] = set()
-    for role in role_names:
-        granted |= ROLE_PERMISSIONS.get(role, set())
-    return granted
+    if has_access:
+        return set(READ_ONLY_PERMISSIONS)
+    return set()
+
+
+def permissions_for_roles(role_names: set[str]) -> set[str]:
+    """Deprecated. Admins get everything, everyone else gets nothing.
+
+    Use :func:`resolve_ingest_permissions` with the explicit access flag instead.
+    """
+    return resolve_ingest_permissions(role_names, has_access=False)

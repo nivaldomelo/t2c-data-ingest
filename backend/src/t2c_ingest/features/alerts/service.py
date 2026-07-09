@@ -12,7 +12,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from t2c_ingest.core.config import settings
 from t2c_ingest.core.crypto import decrypt_secret
+from t2c_ingest.core.ssrf import assert_public_http_url, no_redirect_opener
 from t2c_ingest.models.alert import AlertChannel, AlertNotification, SEVERITY_RANK
 
 FRONTEND_BASE = "http://localhost:3001"
@@ -100,10 +102,12 @@ def send_one(db: Session, notif: AlertNotification, channel: AlertChannel) -> No
     notif.attempts += 1
     try:
         url = decrypt_secret(channel.target_url_encrypted)
+        # SSRF guard: block internal/metadata targets and never follow redirects.
+        assert_public_http_url(url, allow_internal=settings.alerts_allow_internal_targets)
         payload = json.dumps(build_payload(channel.channel_type, notif)).encode()
         req = urllib.request.Request(url, data=payload, method="POST",
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with no_redirect_opener().open(req, timeout=10) as resp:
             notif.http_status = resp.status
             notif.status = "sent" if 200 <= resp.status < 300 else "failed"
             notif.error = None if notif.status == "sent" else f"HTTP {resp.status}"

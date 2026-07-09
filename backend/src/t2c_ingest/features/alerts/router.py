@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from t2c_ingest.core.config import settings
 from t2c_ingest.core.crypto import encrypt_secret
 from t2c_ingest.core.db import get_db
+from t2c_ingest.core.ssrf import assert_public_http_url
 from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.alerts import service
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
@@ -51,6 +53,14 @@ def _validate(channel_type: str | None, severity: str | None) -> None:
         raise HTTPException(422, f"Severidade inválida. Use: {', '.join(SEVERITIES)}.")
 
 
+def _validate_url(url: str) -> None:
+    """SSRF guard on the webhook URL (rejects internal/metadata targets)."""
+    try:
+        assert_public_http_url(url or "", allow_internal=settings.alerts_allow_internal_targets)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 # ── channels ──
 @router.get("/channels", response_model=list[ChannelOut])
 def list_channels(db: Session = Depends(get_db), _: CurrentUser = Depends(require_permission(perms.INGEST_ALERTS_READ))) -> list[ChannelOut]:
@@ -61,8 +71,7 @@ def list_channels(db: Session = Depends(get_db), _: CurrentUser = Depends(requir
 @router.post("/channels", response_model=ChannelOut, status_code=status.HTTP_201_CREATED)
 def create_channel(payload: ChannelCreate, db: Session = Depends(get_db), user: CurrentUser = Depends(require_permission(perms.INGEST_ALERTS_MANAGE))) -> ChannelOut:
     _validate(payload.channel_type, payload.min_severity)
-    if not payload.target_url.strip().lower().startswith(("http://", "https://")):
-        raise HTTPException(422, "A URL do webhook deve começar com http:// ou https://.")
+    _validate_url(payload.target_url)
     ch = AlertChannel(
         name=payload.name.strip(), channel_type=payload.channel_type,
         target_url_encrypted=encrypt_secret(payload.target_url.strip()),
@@ -86,6 +95,7 @@ def update_channel(channel_id: int, payload: ChannelUpdate, db: Session = Depend
     _validate(payload.channel_type, payload.min_severity)
     data = payload.model_dump(exclude_unset=True)
     if "target_url" in data and data["target_url"]:
+        _validate_url(data["target_url"])
         ch.target_url_encrypted = encrypt_secret(data.pop("target_url").strip())
     else:
         data.pop("target_url", None)

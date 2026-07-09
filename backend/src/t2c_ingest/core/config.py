@@ -129,6 +129,18 @@ class Settings(BaseSettings):
     dq_reconcile_enabled: bool = Field(default=True, validation_alias="DQ_RECONCILE_ENABLED")
     dq_reconcile_timeout: int = Field(default=8, validation_alias="DQ_RECONCILE_TIMEOUT")
 
+    # ── Security hardening ──
+    # Allow alert webhooks to target internal/private hosts (SSRF guard off). Default: block.
+    alerts_allow_internal_targets: bool = Field(
+        default=False, validation_alias="ALERTS_ALLOW_INTERNAL_TARGETS"
+    )
+    # Direct-mode login: by default users with MFA enabled must authenticate via proxy mode
+    # (which performs the full MFA challenge). Set true to allow the legacy dev bypass.
+    auth_allow_mfa_bypass: bool = Field(default=False, validation_alias="AUTH_ALLOW_MFA_BYPASS")
+    # Login throttling (per email+IP): max failed attempts within the window before 429.
+    login_max_attempts: int = Field(default=8, validation_alias="LOGIN_MAX_ATTEMPTS")
+    login_window_seconds: int = Field(default=300, validation_alias="LOGIN_WINDOW_SECONDS")
+
     # ── Cluster runtime image (libraries + jobs baked into a versioned image) ──
     runtime_image_name: str = Field(default="t2c-data-ingest-spark-runtime", validation_alias="RUNTIME_IMAGE_NAME")
     runtime_base_image: str = Field(default="apache/spark:3.5.1", validation_alias="RUNTIME_BASE_IMAGE")
@@ -195,6 +207,24 @@ class Settings(BaseSettings):
     @property
     def is_dev(self) -> bool:
         return is_dev_environment(self.env)
+
+    def security_errors(self) -> list[str]:
+        """Return fatal misconfigurations for a non-dev environment (empty in dev or when
+        allow_insecure_defaults is explicitly set)."""
+        if self.is_dev or self.allow_insecure_defaults:
+            return []
+        errors: list[str] = []
+        weak = {"", "change-me", "change-me-must-match-t2c-data"}
+        if (self.jwt_secret_key or "").strip() in weak or len((self.jwt_secret_key or "").strip()) < 32:
+            errors.append("JWT_SECRET_KEY ausente/fraco (defina um segredo forte, >= 32 chars).")
+        if not (self.connection_secret_key or "").strip():
+            errors.append(
+                "CONNECTION_SECRET_KEY ausente: a chave de criptografia em repouso não pode "
+                "recair sobre o segredo do JWT. Gere uma com Fernet.generate_key()."
+            )
+        if self.cors_allow_origins.strip() == "*":
+            errors.append("CORS_ALLOW_ORIGINS='*' não é permitido com credenciais habilitadas.")
+        return errors
 
 
 settings = Settings()
