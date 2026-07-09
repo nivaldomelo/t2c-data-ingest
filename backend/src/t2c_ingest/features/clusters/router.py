@@ -192,6 +192,12 @@ def test_connection(
     _enrich(cluster, summ, persist=True)
     record_audit(db, action="CLUSTER_TEST_SUCCEEDED" if reachable else "CLUSTER_TEST_FAILED",
                  user=user, entity_type="cluster", entity_id=cluster.id, detail={"message": message})
+    if not reachable:
+        from t2c_ingest.features.alerts.service import emit
+
+        emit(db, event_type="CLUSTER_UNAVAILABLE", severity="critical",
+             title=f"Cluster indisponível: {cluster.name}",
+             message=f"Spark master ({cluster.spark_master_url}) inacessível: {message}"[:1000])
     db.commit()
     return ClusterConnectionResult(reachable=reachable, master_url=cluster.spark_master_url, message=message,
                                    workers_detected=summ.get("workers") if reachable else None)
