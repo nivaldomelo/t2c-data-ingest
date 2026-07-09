@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -57,3 +57,15 @@ def results(
     total = db.scalar(count_stmt) or 0
     rows = db.scalars(stmt.order_by(DqResult.id.desc()).offset(params.offset).limit(params.limit)).all()
     return PageOut.build([DqResultOut.model_validate(r) for r in rows], total, params)
+
+
+@router.get("/results/{result_id}", response_model=DqResultOut)
+def result_detail(
+    result_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_QUALITY_READ)),
+) -> DqResultOut:
+    row = db.get(DqResult, result_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resultado de qualidade não encontrado")
+    return DqResultOut.model_validate(row)

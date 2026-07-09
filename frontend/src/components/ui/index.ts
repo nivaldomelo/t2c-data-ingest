@@ -10,5 +10,7 @@ export { LogViewer } from "@/components/ui/LogViewer";
 export type { LogLine } from "@/components/ui/LogViewer";
 export { CodeViewer, CopyCodeButton } from "@/components/ui/CodeViewer";
 export { Modal } from "@/components/ui/Modal";
+export { DetailModalShell, ModalSection, ModalField } from "@/components/ui/DetailModalShell";
+export { JsonViewer } from "@/components/ui/JsonViewer";
 export { ExecutionTimeline } from "@/components/ui/ExecutionTimeline";
 export type { TimelineStep } from "@/components/ui/ExecutionTimeline";

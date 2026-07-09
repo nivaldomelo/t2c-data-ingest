@@ -1,15 +1,12 @@
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Search, ShieldCheck, X } from "lucide-react";
 
 import { api, type Page } from "@/lib/api";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { AuditEventDetailModal, type AuditEvent } from "@/features/audit/AuditEventDetailModal";
 
-interface AuditEvent {
-  id: number; action: string; entity_type: string | null; entity_id: string | null;
-  user_email: string | null; ip_address: string | null; detail: unknown; created_at: string;
-}
 interface Summary { total: number; today: number; last_7d: number; distinct_users_7d: number; top_actions: { action: string; count: number }[] }
 
 function fmt(t: string): string { return new Date(t).toLocaleString("pt-BR"); }
@@ -29,7 +26,7 @@ export default function AuditPage() {
   const [entityType, setEntityType] = useState("");
   const [user, setUser] = useState("");
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [selected, setSelected] = useState<AuditEvent | null>(null);
 
   const query = useMemo(() => {
     const p = new URLSearchParams({ page: String(page), page_size: "30" });
@@ -93,22 +90,24 @@ export default function AuditPage() {
             </tr></thead>
             <tbody>
               {rows.map((e) => (
-                <Fragment key={e.id}>
-                  <tr className="border-b border-gray-50 last:border-0">
-                    <td className="px-5 py-2.5 text-xs text-gray-500">{fmt(e.created_at)}</td>
-                    <td className="px-5 py-2.5"><span className={cn("font-mono text-xs font-medium", actionTone(e.action))}>{e.action}</span></td>
-                    <td className="px-5 py-2.5 text-xs text-gray-600">{e.entity_type ?? "—"}{e.entity_id ? ` #${e.entity_id}` : ""}</td>
-                    <td className="px-5 py-2.5 text-xs text-gray-600">{e.user_email ?? "—"}</td>
-                    <td className="px-5 py-2.5 text-right">
-                      {e.detail ? <button onClick={() => setExpanded(expanded === e.id ? null : e.id)} className="text-xs font-medium text-brand-600 hover:text-brand-700">{expanded === e.id ? "ocultar" : "ver"}</button> : <span className="text-xs text-gray-300">—</span>}
-                    </td>
-                  </tr>
-                  {expanded === e.id && e.detail != null && (
-                    <tr><td colSpan={5} className="bg-gray-50/60 px-5 py-3">
-                      <pre className="overflow-x-auto rounded-lg border border-graphite-800 bg-graphite-950 p-3 font-mono text-xs text-slate-200">{JSON.stringify(e.detail, null, 2)}</pre>
-                    </td></tr>
-                  )}
-                </Fragment>
+                <tr
+                  key={e.id}
+                  onClick={() => setSelected(e)}
+                  className="cursor-pointer border-b border-gray-50 transition-colors last:border-0 hover:bg-gray-50/70"
+                >
+                  <td className="px-5 py-2.5 text-xs text-gray-500">{fmt(e.created_at)}</td>
+                  <td className="px-5 py-2.5"><span className={cn("font-mono text-xs font-medium", actionTone(e.action))}>{e.action}</span></td>
+                  <td className="px-5 py-2.5 text-xs text-gray-600">{e.entity_type ?? "—"}{e.entity_id ? ` #${e.entity_id}` : ""}</td>
+                  <td className="px-5 py-2.5 text-xs text-gray-600">{e.user_email ?? "—"}</td>
+                  <td className="px-5 py-2.5 text-right">
+                    <button
+                      onClick={(ev) => { ev.stopPropagation(); setSelected(e); }}
+                      className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                    >
+                      Ver detalhes
+                    </button>
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>
@@ -122,6 +121,8 @@ export default function AuditPage() {
           <button disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="inline-flex h-8 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 disabled:opacity-40">Próxima <ChevronRight size={15} /></button>
         </div>
       )}
+
+      <AuditEventDetailModal eventId={selected?.id ?? null} seed={selected ?? undefined} onClose={() => setSelected(null)} />
     </div>
   );
 }

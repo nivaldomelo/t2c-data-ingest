@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import Text, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -89,3 +89,15 @@ def events(
     total = db.scalar(count_stmt) or 0
     rows = db.scalars(stmt.order_by(AuditEvent.id.desc()).offset(params.offset).limit(params.limit)).all()
     return PageOut.build([AuditEventOut.model_validate(r) for r in rows], total, params)
+
+
+@router.get("/events/{event_id}", response_model=AuditEventOut)
+def event_detail(
+    event_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_ADMIN)),
+) -> AuditEventOut:
+    row = db.get(AuditEvent, event_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento de auditoria não encontrado")
+    return AuditEventOut.model_validate(row)
