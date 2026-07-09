@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Boxes, Eye, Play } from "lucide-react";
+import { Boxes, Eye, Play, Plus } from "lucide-react";
 
 import { api } from "@/lib/api";
 import type { Page } from "@/lib/api";
@@ -12,6 +12,7 @@ import { TagInput } from "@/features/tags/TagInput";
 import type { TagLite } from "@/features/tags/types";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
+import { CreateJobModal } from "@/features/jobs/CreateJobModal";
 
 interface Job {
   id: number;
@@ -32,6 +33,9 @@ export default function JobsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const canCreate = can("ingest:jobs:create");
+  const canRun = can("ingest:run");
 
   const query = useMemo(() => {
     const p = new URLSearchParams({ page: "1", page_size: "25" });
@@ -81,7 +85,12 @@ export default function JobsPage() {
 
   return (
     <div>
-      <PageHeader icon={<Boxes size={22} />} title="Jobs" description="Jobs Python e Spark cadastrados na plataforma." />
+      <PageHeader
+        icon={<Boxes size={22} />}
+        title="Jobs"
+        description="Gerencie jobs Spark e Python usados em execuções e pipelines."
+        actions={canCreate && <PrimaryButton icon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>Novo Job</PrimaryButton>}
+      />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="text-sm text-gray-500">Filtrar por tags:</span>
         <div className="min-w-[260px] flex-1 max-w-md"><TagInput value={tagFilter} onChange={setTagFilter} allowCreate={false} placeholder="ex.: spark, massa_teste…" /></div>
@@ -92,8 +101,16 @@ export default function JobsPage() {
         rowKey={(j) => j.id}
         loading={isLoading}
         onRowClick={(j) => navigate(`/jobs/${j.id}`)}
-        empty={<EmptyState icon={<Boxes size={24} />} title="Nenhum job encontrado" description={tagFilter.length ? "Nenhum job com as tags selecionadas." : "Cadastre um job Python ou Spark para começar."} />}
+        empty={
+          <EmptyState
+            icon={<Boxes size={24} />}
+            title={tagFilter.length ? "Nenhum job encontrado" : "Nenhum job cadastrado"}
+            description={tagFilter.length ? "Nenhum job com as tags selecionadas." : "Crie seu primeiro job Spark ou Python para começar a executar ingestões."}
+            action={!tagFilter.length && canCreate ? <PrimaryButton icon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>Novo Job</PrimaryButton> : undefined}
+          />
+        }
       />
+      <CreateJobModal open={createOpen} onClose={() => setCreateOpen(false)} canRun={canRun} />
     </div>
   );
 }

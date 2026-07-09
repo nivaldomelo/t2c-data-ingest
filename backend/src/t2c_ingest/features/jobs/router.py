@@ -139,30 +139,55 @@ def search_jobs(
     ]
 
 
+# engine -> allowed job types
+_ENGINE_TYPES = {
+    "python_worker": {"python"},
+    "spark_cluster": {"spark_python", "spark_sql", "spark_submit"},
+}
+
+
 @router.post("", response_model=JobOut, status_code=status.HTTP_201_CREATED)
 def create_job(
     payload: JobCreate,
     db: Session = Depends(get_db),
-    user: CurrentUser = Depends(require_permission(perms.INGEST_WRITE)),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_JOBS_CREATE)),
 ) -> JobOut:
-    if db.scalar(select(JobDefinition).where(JobDefinition.name == payload.name)):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job name already exists")
-    job = JobDefinition(**payload.model_dump(), created_by=user.email, updated_by=user.email)
+    # Only active (non-deleted) jobs must have unique names.
+    dupe = db.scalar(
+        select(JobDefinition).where(JobDefinition.name == payload.name, JobDefinition.deleted_at.is_(None))
+    )
+    if dupe:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Já existe um job ativo com esse nome.")
+    # Engine/type compatibility (only when an engine is provided).
+    if payload.engine and payload.engine in _ENGINE_TYPES and payload.type not in _ENGINE_TYPES[payload.engine]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"O tipo '{payload.type}' não é compatível com a engine '{payload.engine}'.",
+        )
+
+    data = payload.model_dump(exclude={"tags", "create_workspace"})
+    job = JobDefinition(**data, created_by=user.email, updated_by=user.email)
     db.add(job)
     db.flush()
-    # Every job is born versioned: an explicit script_path must live inside an allowed
-    # (git-tracked) dir; otherwise we provision one under spark/jobs or python_jobs.
+    # Every job is born versioned. If create_workspace was requested (or no path given), provision
+    # a starter workspace in the versioned dir; an explicit script_path must be inside an allowed dir.
     try:
-        if job.script_path and job.script_path.strip():
-            assert_within_allowed(job.script_path)
-        else:
+        if payload.create_workspace or not (job.script_path and job.script_path.strip()):
             job.script_path = provision_job_script(job.type, job.name, job.id)
+        else:
+            assert_within_allowed(job.script_path)
     except CodeError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
-    record_audit(db, action="ingest.job.created", user=user, entity_type="job", entity_id=job.id)
+
+    if payload.tags:
+        sync_job_tags(db, job.id, payload.tags, user_id=user.id)
+    record_audit(db, action="JOB_CREATED", user=user, entity_type="job", entity_id=job.id,
+                 detail={"name": job.name, "type": job.type, "engine": job.engine})
     db.commit()
     db.refresh(job)
-    return JobOut.model_validate(job)
+    out = JobOut.model_validate(job)
+    out.tags = [TagLite.model_validate(t) for t in tags_for_jobs(db, [job.id]).get(job.id, [])]
+    return out
 
 
 def _connection_name(db: Session, connection_id: int | None) -> str | None:

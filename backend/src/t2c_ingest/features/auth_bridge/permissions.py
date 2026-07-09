@@ -15,6 +15,8 @@ INGEST_CONNECTIONS_READ = "ingest:connections:read"
 INGEST_CONNECTIONS_WRITE = "ingest:connections:write"
 INGEST_CONNECTIONS_TEST = "ingest:connections:test"
 INGEST_CONNECTIONS_DELETE = "ingest:connections:delete"
+# Creating a job (admin/editor).
+INGEST_JOBS_CREATE = "ingest:jobs:create"
 # Deleting a job (soft delete + code archival). Reserved to admins in this version.
 INGEST_JOBS_DELETE = "ingest:jobs:delete"
 # Reading / editing a job's source code (potentially sensitive).
@@ -77,6 +79,7 @@ ALL_PERMISSIONS = {
     INGEST_CONNECTIONS_WRITE,
     INGEST_CONNECTIONS_TEST,
     INGEST_CONNECTIONS_DELETE,
+    INGEST_JOBS_CREATE,
     INGEST_JOBS_DELETE,
     INGEST_JOBS_CODE_READ,
     INGEST_JOBS_CODE_WRITE,
@@ -135,6 +138,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONNECTIONS_WRITE,
         INGEST_CONNECTIONS_TEST,
         INGEST_CONNECTIONS_DELETE,
+        INGEST_JOBS_CREATE,
         INGEST_JOBS_DELETE,
         INGEST_JOBS_CODE_READ,
         INGEST_JOBS_CODE_WRITE,
@@ -184,6 +188,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_CONNECTIONS_READ,
         INGEST_CONNECTIONS_WRITE,
         INGEST_CONNECTIONS_TEST,
+        INGEST_JOBS_CREATE,
         INGEST_JOBS_CODE_READ,
         INGEST_JOBS_CODE_WRITE,
         INGEST_JOBS_CODE_CREATE,

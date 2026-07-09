@@ -134,6 +134,12 @@ def provision_job_script(job_type: str | None, name: str, job_id: int) -> str:
             fh.write(template.replace("{name}", name))
         with open(os.path.join(folder, "README.md"), "w", encoding="utf-8") as fh:
             fh.write(f"# {name}\n\nCódigo do job (versionado no Git).\n")
+        # Starter structure: utils/ for both; sql/ for Spark jobs.
+        subdirs = ["utils"] + (["sql"] if (job_type or "").startswith("spark") else [])
+        for sub in subdirs:
+            os.makedirs(os.path.join(folder, sub), exist_ok=True)
+            with open(os.path.join(folder, sub, ".gitkeep"), "w", encoding="utf-8") as fh:
+                fh.write("")
     return script_path
 
 

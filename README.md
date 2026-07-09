@@ -128,6 +128,31 @@ login no t2c_data e reutilize o token.
 
 ### Detalhe do job (abas)
 
+### Criar um job (Novo Job)
+
+Na tela **Jobs**, o botão **Novo Job** (canto superior direito; só aparece com
+`ingest:jobs:create` — admin/editor) abre um modal guiado:
+
+1. **Engine** — escolha **Spark** (jobs distribuídos: PySpark, Spark SQL, spark-submit) ou
+   **Python** (scripts leves no worker da aplicação).
+2. **Tipo** — filtrado pela engine: Spark → `spark_python`/`spark_sql`/`spark_submit`;
+   Python → `python`.
+3. **Formulário** — nome (recomendado `snake_case`), descrição, **script path** ou **Criar
+   workspace automaticamente** (gera `main.py`/`main.sql` versionado com `utils/` e, no Spark,
+   `sql/`), classe principal (spark-submit), cluster, conexões origem/destino/única (do módulo
+   **Conexões**, com status do teste, sem senha), **argumentos** (construtor chave/valor que gera
+   `--chave valor …`), parâmetros padrão (JSON), timeout, retry, ativo e **tags**.
+
+Botões: **Criar job**, **Criar e abrir código** (abre o workspace do job) e **Criar e executar**
+(dispara uma execução) — além de **Cancelar**. O backend valida: nome obrigatório e único entre
+jobs ativos, **compatibilidade engine↔tipo** (`python_worker`→`python`;
+`spark_cluster`→`spark_*`), `script_path` dentro dos diretórios permitidos, retry ≥ 0 e
+permissão. Payload: `POST /api/v1/jobs` (com `tags` e `create_workspace`).
+
+> Sobre **Criar workspace automaticamente**: o starter é provisionado no **diretório versionado**
+> do job (`spark/jobs/{slug}` ou `python_jobs/{slug}`), não em `/opt/t2c/jobs/workspaces` —
+> mantendo o princípio de que todo código de job é versionado no Git (deploy via imagem/K8s).
+
 Clique no nome de um job (ou em **Ver detalhes**) para abrir `/jobs/{id}`, com abas:
 
 - **Visão geral** — painel executivo em cards: **Resumo** (badges de tipo/engine/status, tags e

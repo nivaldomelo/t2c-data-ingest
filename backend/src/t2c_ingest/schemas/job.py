@@ -37,7 +37,10 @@ class JobBase(BaseModel):
 
 
 class JobCreate(JobBase):
-    pass
+    # Tags to attach on creation (created if new) and whether to auto-provision a starter
+    # workspace (in the versioned dir) instead of requiring an explicit script_path.
+    tags: list[str] = Field(default_factory=list)
+    create_workspace: bool = False
 
 
 class JobUpdate(BaseModel):

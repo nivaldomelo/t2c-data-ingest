@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArrowLeft, CalendarClock, Code2, ListChecks, PlayCircle, Settings2 } from "lucide-react";
 
@@ -34,11 +34,20 @@ export default function JobDetailPage() {
   const jobId = Number(id);
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const { can } = useAuth();
   const [tab, setTab] = useState<TabKey>("overview");
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // "Criar job e abrir código" navigates here with state.openCode -> open the workspace once.
+  useEffect(() => {
+    if ((location.state as { openCode?: boolean } | null)?.openCode) {
+      setWorkspaceOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location, navigate]);
 
   const { data: job, isLoading, error } = useQuery({
     queryKey: ["job", jobId],
