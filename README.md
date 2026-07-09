@@ -560,6 +560,23 @@ instalação, o botão *Instalar biblioteca* não aparece; sem permissão de rem
 Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
 validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
 
+## Dashboard operacional
+
+A tela inicial (`/`) é um **dashboard operacional** com atualização automática (10s) via
+`GET /api/v1/dashboard/operational`, para responder rápido "o que está rodando, o que falhou e o
+que está atrasado":
+
+- **KPIs**: rodando agora (jobs + pipelines), execuções hoje (ok/falha), falhas em 7 dias (jobs e
+  pipelines com erro), tempo médio, registros **lidos**/**gravados** hoje.
+- **Painéis**: Rodando agora, Falhas recentes, **Cluster Spark** (workers/cores/memória ao vivo),
+  **Schedules atrasados** (`next_run_at` no passado, minutos de atraso) e próximos, **execuções
+  por status** (7d), **cargas com zero registros** hoje, **acima do tempo normal**
+  (duração > 1,5× a média do job) e últimas execuções — cada item linka para o detalhe.
+
+Os registros (lidos/gravados/zero) vêm da linha `INGEST_SUMMARY` que o worker salva em
+`final_message` — sem varrer logs em tempo de request; agregações e o scan de execuções do dia são
+limitados (bounded) para manter a tela rápida.
+
 ## Reprocessamentos (backfill)
 
 A tela **Reprocessamentos** (`/backfills`) permite reprocessar dados de forma **controlada e
