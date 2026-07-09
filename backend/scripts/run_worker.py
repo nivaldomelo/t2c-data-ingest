@@ -249,7 +249,10 @@ def _dispatch_alerts() -> None:
 # stored secrets (and the job's stdout is captured verbatim into execution logs). No job needs
 # them. DATABASE_URL is intentionally kept: the control-table-driven ingest reads it.
 _SECRET_ENV_EXACT = {"JWT_SECRET_KEY", "CONNECTION_SECRET_KEY"}
-_SECRET_ENV_MARKERS = ("SECRET", "TOKEN", "PRIVATE_KEY")
+_SECRET_ENV_MARKERS = (
+    "SECRET", "TOKEN", "PRIVATE_KEY", "PASSWORD", "PASSWD",
+    "CREDENTIAL", "API_KEY", "APIKEY", "ACCESS_KEY",
+)
 
 
 def _os_environ() -> dict:

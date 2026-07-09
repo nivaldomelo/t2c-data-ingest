@@ -6,7 +6,6 @@ worker) POSTs them and records the result. Delivery is best-effort and never bre
 from __future__ import annotations
 
 import json
-import urllib.request
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -14,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from t2c_ingest.core.config import settings
 from t2c_ingest.core.crypto import decrypt_secret
-from t2c_ingest.core.ssrf import assert_public_http_url, no_redirect_opener
+from t2c_ingest.core.ssrf import safe_post
 from t2c_ingest.models.alert import AlertChannel, AlertNotification, SEVERITY_RANK
 
 FRONTEND_BASE = "http://localhost:3001"
@@ -102,19 +101,16 @@ def send_one(db: Session, notif: AlertNotification, channel: AlertChannel) -> No
     notif.attempts += 1
     try:
         url = decrypt_secret(channel.target_url_encrypted)
-        # SSRF guard: block internal/metadata targets and never follow redirects.
-        assert_public_http_url(url, allow_internal=settings.alerts_allow_internal_targets)
         payload = json.dumps(build_payload(channel.channel_type, notif)).encode()
-        req = urllib.request.Request(url, data=payload, method="POST",
-                                     headers={"Content-Type": "application/json"})
-        with no_redirect_opener().open(req, timeout=10) as resp:
-            notif.http_status = resp.status
-            notif.status = "sent" if 200 <= resp.status < 300 else "failed"
-            notif.error = None if notif.status == "sent" else f"HTTP {resp.status}"
-    except urllib.error.HTTPError as exc:  # noqa: BLE001
-        notif.http_status = exc.code
-        notif.status = "failed"
-        notif.error = f"HTTP {exc.code}: {exc.reason}"[:500]
+        # SSRF-safe POST: validates + PINS the connection to a public IP (no DNS-rebinding),
+        # does not follow redirects.
+        code = safe_post(
+            url, payload, {"Content-Type": "application/json"}, timeout=10,
+            allow_internal=settings.alerts_allow_internal_targets,
+        )
+        notif.http_status = code
+        notif.status = "sent" if 200 <= code < 300 else "failed"
+        notif.error = None if notif.status == "sent" else f"HTTP {code}"
     except Exception as exc:  # noqa: BLE001
         notif.status = "failed"
         notif.error = str(exc)[:500]
