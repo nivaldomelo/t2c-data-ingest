@@ -90,12 +90,17 @@ def _jdbc_jar_args() -> list[str]:
     return []
 
 
-def _build_command(job: JobDefinition, env_keys: list[str] | None = None) -> list[str]:
+def _build_command(
+    job: JobDefinition,
+    env_keys: list[str] | None = None,
+    extra_confs: list[str] | None = None,
+) -> list[str]:
     args = [str(a) for a in (job.arguments or [])]
+    extra_confs = extra_confs or []
     if job.type in {"spark_python", "spark_submit"}:
         container = settings.runtime_spark_submit_container
         if container and settings.spark_submit_via_container:
-            return _container_spark_command(job, args, env_keys or [], container)
+            return _container_spark_command(job, args, env_keys or [], container, extra_confs)
         cmd = ["spark-submit", "--master", settings.spark_master_url]
         # Driver host/bind for standalone client mode. Spark rejects hostnames with '_'
         # ("Invalid Spark URL"), so we advertise a DNS-valid name (the compose service).
@@ -111,6 +116,8 @@ def _build_command(job: JobDefinition, env_keys: list[str] | None = None) -> lis
             "--conf",
             "spark.executor.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
         ]
+        for conf in extra_confs:  # e.g. s3a endpoint/region/path-style (non-secret)
+            cmd += ["--conf", conf]
         if job.type == "spark_submit" and job.main_class:
             cmd += ["--class", job.main_class]
         cmd += [job.script_path or ""]
@@ -119,7 +126,10 @@ def _build_command(job: JobDefinition, env_keys: list[str] | None = None) -> lis
     return ["python", job.script_path or ""] + args
 
 
-def _container_spark_command(job: JobDefinition, args: list[str], env_keys: list[str], container: str) -> list[str]:
+def _container_spark_command(
+    job: JobDefinition, args: list[str], env_keys: list[str], container: str,
+    extra_confs: list[str] | None = None,
+) -> list[str]:
     """spark-submit INSIDE a Spark container (via docker exec) so the driver's Python matches the
     executors. JDBC jars are baked into the image (/opt/spark/jars). Env (incl. secrets) is passed
     with `docker exec -e KEY` (read from the worker's process env — never on the command line)."""
@@ -138,6 +148,8 @@ def _container_spark_command(job: JobDefinition, args: list[str], env_keys: list
         "--conf", "spark.driver.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
         "--conf", "spark.executor.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
     ]
+    for conf in (extra_confs or []):  # e.g. s3a endpoint/region/path-style (non-secret)
+        parts += ["--conf", shlex.quote(conf)]
     if job.type == "spark_submit" and job.main_class:
         parts += ["--class", shlex.quote(job.main_class)]
     parts += [shlex.quote(job.script_path or "")] + [shlex.quote(a) for a in args]
@@ -179,6 +191,8 @@ def _run_one(db, execution: Execution) -> None:
 
     # Resolve registered connections referenced in the job args (validates active + tests).
     connection_env: dict[str, str] = {}
+    connection_confs: list[str] = []
+    connection_secrets: list[str] = []
     try:
         resolved = resolve_connections(db, job.arguments or [], test=True)
         for note in resolved.notes:
@@ -191,6 +205,8 @@ def _run_one(db, execution: Execution) -> None:
             db.commit()
             return
         connection_env = resolved.env
+        connection_confs = resolved.spark_confs
+        connection_secrets = resolved.secret_values
     except Exception as exc:  # noqa: BLE001
         execution.status = "failed"
         execution.final_message = f"Falha ao resolver conexões: {exc}"
@@ -211,7 +227,7 @@ def _run_one(db, execution: Execution) -> None:
         env.update({k: str(v) for k, v in (job.env_vars or {}).items()})
         env.update(connection_env)  # SOURCE_*/TARGET_* (includes decrypted passwords)
         # Build the command AFTER env so a container submit can pass env keys via docker exec -e.
-        cmd = _build_command(job, list(env.keys()))
+        cmd = _build_command(job, list(env.keys()), extra_confs=connection_confs)
         # Stamp the runtime stack that runs this job (Spark jobs run on the Spark 4 image).
         if job.type in {"spark_python", "spark_submit"}:
             execution.spark_version = settings.spark_version
@@ -223,6 +239,7 @@ def _run_one(db, execution: Execution) -> None:
 
         secret_values = [v for k, v in connection_env.items() if "PASSWORD" in k.upper() and v]
         secret_values += [v for _, v, is_secret in var_items if is_secret and v]
+        secret_values += [v for v in connection_secrets if v]  # AWS access/secret/session tokens
         stdout, stderr, returncode, outcome = _run_subprocess(db, execution, cmd, env, job)
         stdout = mask_secrets(stdout, secret_values)
         stderr = mask_secrets(stderr, secret_values)

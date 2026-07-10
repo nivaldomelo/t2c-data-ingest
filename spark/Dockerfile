@@ -10,15 +10,23 @@ FROM apache/spark:4.1.2-scala2.13-java17-python3-ubuntu
 
 USER root
 
-# ── JDBC drivers (baked so jobs never need --packages / network at run time) ──
+# ── JDBC drivers + S3A (Data Lake) jars (baked so jobs never need --packages at run time) ──
+# hadoop-aws MUST match the Hadoop client shipped by Spark 4.1.2 (3.4.2), and Hadoop 3.4.x uses
+# the AWS SDK v2 "bundle" (não o aws-java-sdk-bundle v1).
 ARG POSTGRES_JDBC=42.7.10
 ARG MYSQL_JDBC=9.1.0
+ARG HADOOP_AWS=3.4.2
+ARG AWS_SDK_V2_BUNDLE=2.24.6
 RUN set -eux; \
     cd /opt/spark/jars; \
     curl -fSL -o "postgresql-${POSTGRES_JDBC}.jar" \
       "https://repo1.maven.org/maven2/org/postgresql/postgresql/${POSTGRES_JDBC}/postgresql-${POSTGRES_JDBC}.jar"; \
     curl -fSL -o "mysql-connector-j-${MYSQL_JDBC}.jar" \
-      "https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/${MYSQL_JDBC}/mysql-connector-j-${MYSQL_JDBC}.jar"
+      "https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/${MYSQL_JDBC}/mysql-connector-j-${MYSQL_JDBC}.jar"; \
+    curl -fSL -o "hadoop-aws-${HADOOP_AWS}.jar" \
+      "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS}/hadoop-aws-${HADOOP_AWS}.jar"; \
+    curl -fSL -o "bundle-${AWS_SDK_V2_BUNDLE}.jar" \
+      "https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/${AWS_SDK_V2_BUNDLE}/bundle-${AWS_SDK_V2_BUNDLE}.jar"
 
 # ── Python runtime libraries (driver + executors share these) ──
 COPY requirements.txt /opt/t2c/runtime/requirements.txt
