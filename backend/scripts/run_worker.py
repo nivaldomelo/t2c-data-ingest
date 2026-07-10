@@ -283,7 +283,8 @@ def _run_subprocess(db, execution: Execution, cmd: list[str], env: dict, job: Jo
                     _terminate(proc)
                     outcome = "cancelled"
                     break
-        out_f.seek(0); err_f.seek(0)
+        out_f.seek(0)
+        err_f.seek(0)
         return out_f.read(), err_f.read(), proc.returncode, outcome
 
 

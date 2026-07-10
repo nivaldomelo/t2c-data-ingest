@@ -229,7 +229,7 @@ def _enqueue_runtime_validation(db: Session, user: CurrentUser, vtype: str) -> C
 
     libs = None
     if vtype == "libraries":
-        libs = [l.package_name for l in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
+        libs = [lib.package_name for lib in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
     val = RuntimeValidation(
         validation_type=vtype, status="queued",
         worker_count_expected=settings.spark_expected_workers, libraries_checked=libs, created_by=user.email,

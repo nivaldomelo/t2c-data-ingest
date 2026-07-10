@@ -178,7 +178,7 @@ def create_validation(payload: RuntimeValidateRequest, db: Session = Depends(get
         raise HTTPException(status_code=422, detail="Tipo de validação inválido.")
     libs = None
     if payload.validation_type == "libraries":
-        libs = [l.package_name for l in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
+        libs = [lib.package_name for lib in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
     val = RuntimeValidation(
         runtime_build_id=payload.runtime_build_id, validation_type=payload.validation_type,
         status="queued", worker_count_expected=settings.spark_expected_workers,
@@ -200,7 +200,7 @@ def apply_active_image(db: Session = Depends(get_db), user: CurrentUser = Depend
     build = db.scalar(select(RuntimeBuild).where(RuntimeBuild.is_active.is_(True)).limit(1))
     if build is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nenhuma imagem runtime ativa. Ative um build antes de aplicar.")
-    libs = [l.package_name for l in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
+    libs = [lib.package_name for lib in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
     val = RuntimeValidation(
         runtime_build_id=build.id, validation_type="apply", status="queued",
         worker_count_expected=settings.spark_expected_workers, libraries_checked=libs, created_by=user.email,
