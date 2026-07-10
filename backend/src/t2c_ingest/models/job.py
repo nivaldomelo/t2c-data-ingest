@@ -45,6 +45,9 @@ class JobDefinition(TimestampMixin, Base):
     )
     default_parameters: Mapped[dict | None] = mapped_column(JSONB)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Max simultaneous queued/running executions for this job (0 = unlimited). Scheduler skips
+    # a slot when the limit is reached, preventing overlapping scheduled runs from piling up.
+    max_active_runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     # Optional link to a controle.t2c_data_controle_ingestao record (cross-schema; no FK).
     ingestion_control_id: Mapped[int | None] = mapped_column(Integer)
     # python_worker | spark_cluster (defaults derived from type when null)

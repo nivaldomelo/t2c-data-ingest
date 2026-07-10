@@ -25,7 +25,7 @@ from t2c_ingest.features.schedules.manager import apply_next_run  # noqa: E402
 from t2c_ingest.models.job import JobDefinition  # noqa: E402
 from t2c_ingest.models.schedule import JobSchedule, ScheduleRun  # noqa: E402
 from t2c_ingest.models.audit import AuditEvent  # noqa: E402
-from t2c_ingest.services.execution_service import create_job_execution  # noqa: E402
+from t2c_ingest.services.execution_service import active_execution_count, create_job_execution  # noqa: E402
 
 MAX_FIRES_PER_TICK = 50
 
@@ -89,6 +89,13 @@ def _fire_one() -> bool:
                 run.message = "Job inexistente ou inativo."
                 sch.last_status = "failed"
                 _audit(db, "JOB_SCHEDULE_FAILED", sch, {"reason": run.message})
+            elif int(getattr(job, "max_active_runs", 0) or 0) > 0 and \
+                    active_execution_count(db, job.id) >= int(job.max_active_runs):
+                # Overlap guard: a previous run is still active and the job forbids overlap.
+                run.status = "skipped"
+                run.message = f"Ignorado: {job.max_active_runs} execução(ões) ativa(s) (sem sobreposição)."
+                sch.last_status = "skipped"
+                _audit(db, "JOB_SCHEDULE_SKIPPED", sch, {"reason": "max_active_runs"})
             else:
                 execution = create_job_execution(
                     db,

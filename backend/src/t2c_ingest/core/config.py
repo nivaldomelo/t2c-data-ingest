@@ -149,6 +149,12 @@ class Settings(BaseSettings):
     retention_audit_days: int = Field(default=0, validation_alias="RETENTION_AUDIT_DAYS")
     retention_interval_seconds: int = Field(default=3600, validation_alias="RETENTION_INTERVAL_SECONDS")
 
+    # ── Execution reliability ──
+    # Lease TTL for a running execution; a reaper fails runs whose lease expired (worker crash).
+    worker_lease_ttl_seconds: int = Field(default=120, validation_alias="WORKER_LEASE_TTL_SECONDS")
+    # How often the worker refreshes the lease / checks cancel while a job runs.
+    worker_heartbeat_seconds: int = Field(default=20, validation_alias="WORKER_HEARTBEAT_SECONDS")
+
     # ── Cluster runtime image (libraries + jobs baked into a versioned image) ──
     runtime_image_name: str = Field(default="t2c-data-ingest-spark-runtime", validation_alias="RUNTIME_IMAGE_NAME")
     runtime_base_image: str = Field(default="apache/spark:3.5.1", validation_alias="RUNTIME_BASE_IMAGE")

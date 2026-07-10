@@ -23,6 +23,7 @@ class JobBase(BaseModel):
     target_connection_id: int | None = None
     default_parameters: dict | None = None
     retry_count: int = 0
+    max_active_runs: int = 0
     ingestion_control_id: int | None = None
     engine: str | None = None
     timeout_seconds: int | None = None
@@ -58,6 +59,7 @@ class JobUpdate(BaseModel):
     target_connection_id: int | None = None
     default_parameters: dict | None = None
     retry_count: int | None = None
+    max_active_runs: int | None = None
     ingestion_control_id: int | None = None
     engine: str | None = None
     timeout_seconds: int | None = None
@@ -113,6 +115,7 @@ class JobListItem(BaseModel):
     script_path: str | None = None
     is_active: bool
     retry_count: int | None = None
+    max_active_runs: int | None = None
     source_connection_name: str | None = None
     target_connection_name: str | None = None
     tags: list[TagLite] = Field(default_factory=list)

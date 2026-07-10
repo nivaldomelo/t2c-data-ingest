@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import glob
 import os
+import signal
+import socket
 import subprocess
 import sys
+import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -32,6 +35,13 @@ from t2c_ingest.models.job import JobDefinition  # noqa: E402
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+_WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"
+
+
+def _lease_until() -> datetime:
+    return _now() + timedelta(seconds=settings.worker_lease_ttl_seconds)
 
 
 def _log(db, execution_id: int, seq: int, level: str, message: str) -> int:
@@ -61,6 +71,9 @@ def _claim_next(db) -> Execution | None:
         return None
     execution.status = "running"
     execution.started_at = _now()
+    execution.worker_id = _WORKER_ID
+    execution.heartbeat_at = _now()
+    execution.lease_expires_at = _lease_until()
     db.commit()
     return execution
 
@@ -161,32 +174,29 @@ def _run_one(db, execution: Execution) -> None:
         env = {**_os_environ()}
         env.update({k: str(v) for k, v in (job.env_vars or {}).items()})
         env.update(connection_env)  # SOURCE_*/TARGET_* (includes decrypted passwords)
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=job.timeout_seconds or None,
-            env=env,
-        )
-        if proc.stdout:
-            seq = _log(db, execution.id, seq, "INFO", proc.stdout)
-        if proc.stderr:
-            seq = _log(db, execution.id, seq, "ERROR" if proc.returncode else "WARNING", proc.stderr)
+        stdout, stderr, returncode, outcome = _run_subprocess(db, execution, cmd, env, job)
+        if stdout:
+            seq = _log(db, execution.id, seq, "INFO", stdout)
+        if stderr:
+            seq = _log(db, execution.id, seq, "ERROR" if returncode else "WARNING", stderr)
         duration = int(time.monotonic() - started)
-        if proc.returncode == 0:
+        execution.duration_seconds = duration
+        if outcome == "cancelled":
+            execution.status = "cancelled"
+            execution.final_message = execution.final_message or "Cancelado durante a execução"
+            _log(db, execution.id, seq, "WARNING", "Execução cancelada")
+        elif outcome == "timeout":
+            execution.status = "timeout"
+            execution.final_message = f"Timed out after {job.timeout_seconds}s"
+            _log(db, execution.id, seq, "ERROR", "Execution timed out")
+        elif returncode == 0:
             execution.status = "success"
             execution.final_message = "Completed successfully"
-            _capture_summary(db, execution, proc.stdout or "")
+            _capture_summary(db, execution, stdout or "")
         else:
             execution.status = "failed"
-            execution.final_message = f"Exited with code {proc.returncode}"
-            execution.error_trace = (proc.stderr or "")[:20000]
-        execution.duration_seconds = duration
-    except subprocess.TimeoutExpired:
-        execution.status = "timeout"
-        execution.final_message = f"Timed out after {job.timeout_seconds}s"
-        execution.duration_seconds = int(time.monotonic() - started)
-        _log(db, execution.id, seq, "ERROR", "Execution timed out")
+            execution.final_message = f"Exited with code {returncode}"
+            execution.error_trace = (stderr or "")[:20000]
     except Exception as exc:  # noqa: BLE001
         execution.status = "failed"
         execution.final_message = str(exc)
@@ -195,9 +205,89 @@ def _run_one(db, execution: Execution) -> None:
         _log(db, execution.id, seq, "ERROR", repr(exc))
     finally:
         execution.finished_at = _now()
+        execution.lease_expires_at = None
         db.commit()
         _evaluate_data_quality(db, execution)
         _emit_execution_alert(db, execution)
+        _maybe_retry(db, execution)
+
+
+def _run_subprocess(db, execution: Execution, cmd: list[str], env: dict, job: JobDefinition):
+    """Run the job as a child process group, refreshing the lease and honoring cancellation and
+    timeout while it runs. Returns (stdout, stderr, returncode, outcome) where outcome is one of
+    'done' | 'cancelled' | 'timeout'. Output goes to temp files to avoid pipe-buffer deadlock."""
+    timeout_s = job.timeout_seconds or None
+    hb = max(3, int(settings.worker_heartbeat_seconds or 20))
+    started = time.monotonic()
+    outcome = "done"
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as out_f, \
+         tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as err_f:
+        proc = subprocess.Popen(  # noqa: S603 - argv list, no shell
+            cmd, stdout=out_f, stderr=err_f, env=env, start_new_session=True,
+        )
+        while True:
+            try:
+                proc.wait(timeout=hb)
+                break
+            except subprocess.TimeoutExpired:
+                _touch_lease(db, execution)
+                if timeout_s and (time.monotonic() - started) > timeout_s:
+                    _terminate(proc)
+                    outcome = "timeout"
+                    break
+                if _cancel_requested(db, execution):
+                    _terminate(proc)
+                    outcome = "cancelled"
+                    break
+        out_f.seek(0); err_f.seek(0)
+        return out_f.read(), err_f.read(), proc.returncode, outcome
+
+
+def _terminate(proc: subprocess.Popen) -> None:
+    """Stop the whole process group (SIGTERM, then SIGKILL)."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(os.getpgid(proc.pid), sig)
+            proc.wait(timeout=10)
+            return
+        except (ProcessLookupError, PermissionError):
+            return
+        except Exception:  # noqa: BLE001
+            continue
+
+
+def _touch_lease(db, execution: Execution) -> None:
+    try:
+        db.query(Execution).filter(Execution.id == execution.id).update(
+            {"heartbeat_at": _now(), "lease_expires_at": _lease_until()}
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+
+
+def _cancel_requested(db, execution: Execution) -> bool:
+    try:
+        return bool(db.scalar(select(Execution.cancel_requested).where(Execution.id == execution.id)))
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        return False
+
+
+def _maybe_retry(db, execution: Execution) -> None:
+    """Enqueue a retry for a failed job execution if attempts remain."""
+    try:
+        if execution.status != "failed":
+            return
+        from t2c_ingest.services.execution_service import enqueue_retry
+
+        retry = enqueue_retry(db, execution)
+        if retry is not None:
+            db.commit()
+            print(f"[worker] execution {execution.id} failed -> retry {retry.id} (attempt {retry.attempt})")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[worker] retry error for execution {execution.id}: {exc}")
 
 
 def _evaluate_data_quality(db, execution) -> None:
@@ -345,6 +435,31 @@ def _process_runtime_jobs() -> bool:
     return ran
 
 
+def _reap_stale_executions() -> None:
+    """Fail (and retry) executions whose worker died — their lease expired while 'running'."""
+    try:
+        with SessionLocal() as db:
+            now = _now()
+            stale = db.scalars(
+                select(Execution).where(
+                    Execution.status == "running",
+                    Execution.lease_expires_at.is_not(None),
+                    Execution.lease_expires_at < now,
+                ).limit(20)
+            ).all()
+            for ex in stale:
+                ex.status = "failed"
+                ex.final_message = f"Execução órfã: worker {ex.worker_id} perdeu o lease"
+                ex.finished_at = now
+                ex.lease_expires_at = None
+                db.commit()
+                print(f"[worker] reaped stale execution {ex.id} (worker {ex.worker_id})")
+                _emit_execution_alert(db, ex)
+                _maybe_retry(db, ex)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] reaper error: {exc}")
+
+
 _last_retention = 0.0
 
 
@@ -393,6 +508,8 @@ def main() -> None:
         # Process one queued runtime build/validation per tick.
         if _process_runtime_jobs():
             ran = True
+        # Recover executions orphaned by a crashed worker (lease expired).
+        _reap_stale_executions()
         # Prune old rows from append-only tables (bounded, interval-guarded).
         _maybe_run_retention()
         if not ran:
