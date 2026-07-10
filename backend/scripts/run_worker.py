@@ -129,6 +129,8 @@ def _container_spark_command(job: JobDefinition, args: list[str], env_keys: list
         "/opt/spark/bin/spark-submit",
         "--master", shlex.quote(settings.spark_master_url),
         "--conf", "spark.driver.host=$(hostname)",
+        "--conf", "spark.pyspark.python=/usr/bin/python3",
+        "--conf", "spark.pyspark.driver.python=/usr/bin/python3",
         "--conf", "spark.executor.cores=1",
         "--conf", "spark.deploy.spreadOut=true",
         "--conf", "spark.driver.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
@@ -208,6 +210,11 @@ def _run_one(db, execution: Execution) -> None:
         env.update(connection_env)  # SOURCE_*/TARGET_* (includes decrypted passwords)
         # Build the command AFTER env so a container submit can pass env keys via docker exec -e.
         cmd = _build_command(job, list(env.keys()))
+        # Stamp the runtime stack that runs this job (Spark jobs run on the Spark 4 image).
+        if job.type in {"spark_python", "spark_submit"}:
+            execution.spark_version = settings.spark_version
+            execution.python_version = settings.spark_python_version
+            execution.runtime_image = settings.runtime_worker_image_tag
         seq = _log(db, execution.id, seq, "INFO", f"$ {_redact(cmd)}")
         # Exact secret values to redact from captured output (connection creds + secret vars).
         from t2c_ingest.core.log_masking import mask_secrets
