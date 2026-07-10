@@ -4,6 +4,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { titleForPath } from "@/lib/pageTitle";
 
 export function AppShell() {
   const location = useLocation();
@@ -11,6 +12,11 @@ export function AppShell() {
 
   // Fecha o drawer ao navegar (mobile).
   useEffect(() => setMobileNavOpen(false), [location.pathname]);
+
+  // Título da aba por página: "T2C Data Ingest | <página>".
+  useEffect(() => {
+    document.title = titleForPath(location.pathname);
+  }, [location.pathname]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
