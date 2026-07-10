@@ -137,6 +137,8 @@ class Settings(BaseSettings):
     # Alert delivery retry: attempts with exponential backoff before a notification goes 'dead'.
     alert_max_attempts: int = Field(default=5, validation_alias="ALERT_MAX_ATTEMPTS")
     alert_retry_base_seconds: int = Field(default=30, validation_alias="ALERT_RETRY_BASE_SECONDS")
+    # Suppress identical (channel+event+entity) alerts within this window (anti-storm).
+    alert_dedup_seconds: int = Field(default=300, validation_alias="ALERT_DEDUP_SECONDS")
     # Silent-failure monitors.
     schedule_overdue_grace_seconds: int = Field(default=300, validation_alias="SCHEDULE_OVERDUE_GRACE_SECONDS")
     worker_down_threshold_seconds: int = Field(default=180, validation_alias="WORKER_DOWN_THRESHOLD_SECONDS")

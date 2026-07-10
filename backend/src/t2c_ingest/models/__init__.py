@@ -27,3 +27,12 @@ from t2c_ingest.models.job_code_version import JobCodeVersion  # noqa: F401
 from t2c_ingest.models.schedule import JobSchedule, ScheduleRun  # noqa: F401
 from t2c_ingest.models.variable import JobVariable, Variable  # noqa: F401
 from t2c_ingest.models.tag import JobTag, Tag  # noqa: F401
+# Previously missing from autogenerate's view — register every owned table so
+# `alembic revision --autogenerate` detects drift instead of silently ignoring them.
+from t2c_ingest.models.alert import AlertChannel, AlertNotification  # noqa: F401
+from t2c_ingest.models.runtime import RuntimeBuild, RuntimeLibrary, RuntimeValidation  # noqa: F401
+from t2c_ingest.models.cluster_library import ClusterLibrary, ClusterLibraryAction, JobLibrary  # noqa: F401
+from t2c_ingest.models.backfill import BackfillRun  # noqa: F401
+from t2c_ingest.models.data_quality import DqResult  # noqa: F401
+from t2c_ingest.models.access import IngestUserAccess  # noqa: F401
+from t2c_ingest.models.outbox import IntegrationOutbox  # noqa: F401

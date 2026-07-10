@@ -17,12 +17,17 @@ def record_audit(
 ) -> None:
     """Best-effort audit write. Never raises: auditing must not break the request path."""
     try:
+        from t2c_ingest.core.request_ctx import get_request_meta
+
+        ip, user_agent = get_request_meta()
         event = AuditEvent(
             action=action,
             entity_type=entity_type,
             entity_id=str(entity_id) if entity_id is not None else None,
             user_email=user.email if user else None,
             user_id=user.id if user else None,
+            ip_address=ip,
+            user_agent=user_agent[:255] if user_agent else None,
             detail=detail,
         )
         db.add(event)

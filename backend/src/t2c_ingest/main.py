@@ -32,6 +32,17 @@ elif settings.cors_origins_list:
     logger.warning("CORS_ALLOW_ORIGINS='*' ignorado: incompatível com credenciais.")
 
 
+@app.middleware("http")
+async def _capture_request_meta(request, call_next):
+    """Record client IP + user-agent for audit trails (honors the reverse proxy's X-Real-IP)."""
+    from t2c_ingest.core.request_ctx import set_request_meta
+
+    xff = request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for", "")
+    ip = (xff.split(",")[0].strip() if xff else None) or (request.client.host if request.client else None)
+    set_request_meta(ip, request.headers.get("user-agent"))
+    return await call_next(request)
+
+
 # Liveness/readiness without auth or the /api/v1 prefix (Turn2C standard).
 @app.get("/liveness")
 def liveness() -> dict:

@@ -174,23 +174,46 @@ def _enrich_from_logs(db: Session, execution: Execution, detail: ExecutionDetail
 def get_execution_logs(
     execution_id: int,
     params: PageParams = Depends(),
+    level: str | None = None,
+    q: str | None = None,
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_LOGS_READ)),
 ) -> PageOut[ExecutionLogOut]:
     if not db.get(Execution, execution_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution not found")
-    total = (
-        db.scalar(select(func.count(ExecutionLog.id)).where(ExecutionLog.execution_id == execution_id))
-        or 0
-    )
+    filters = [ExecutionLog.execution_id == execution_id]
+    if level:
+        filters.append(ExecutionLog.level == level.upper())
+    if q:
+        filters.append(ExecutionLog.message.ilike(f"%{q.strip()}%"))
+    total = db.scalar(select(func.count(ExecutionLog.id)).where(*filters)) or 0
     rows = db.scalars(
-        select(ExecutionLog)
-        .where(ExecutionLog.execution_id == execution_id)
+        select(ExecutionLog).where(*filters)
         .order_by(ExecutionLog.seq, ExecutionLog.id)
-        .offset(params.offset)
-        .limit(params.limit)
+        .offset(params.offset).limit(params.limit)
     ).all()
     return PageOut.build([ExecutionLogOut.model_validate(r) for r in rows], total, params)
+
+
+@router.get("/{execution_id}/logs/download")
+def download_execution_logs(
+    execution_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_LOGS_READ)),
+):
+    """Download the full log as plain text (already secret-masked at write time)."""
+    from fastapi.responses import PlainTextResponse
+
+    if not db.get(Execution, execution_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution not found")
+    rows = db.scalars(
+        select(ExecutionLog.message).where(ExecutionLog.execution_id == execution_id)
+        .order_by(ExecutionLog.seq, ExecutionLog.id)
+    ).all()
+    return PlainTextResponse(
+        "\n".join(rows),
+        headers={"Content-Disposition": f'attachment; filename="execution-{execution_id}.log"'},
+    )
 
 
 @router.post("/{execution_id}/cancel", response_model=ExecutionOut)

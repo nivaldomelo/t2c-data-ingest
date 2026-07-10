@@ -34,11 +34,24 @@ def emit(db: Session, *, event_type: str, severity: str, title: str, message: st
     try:
         channels = db.scalars(select(AlertChannel).where(AlertChannel.active.is_(True))).all()
         queued = 0
+        cutoff = _now() - timedelta(seconds=settings.alert_dedup_seconds)
         for ch in channels:
             events = ch.events or []
             if events and event_type not in events:
                 continue
             if SEVERITY_RANK.get(severity, 1) < SEVERITY_RANK.get(ch.min_severity, 1):
+                continue
+            # Dedup: skip an identical (channel, event, entity) alert raised within the cooldown,
+            # so a recurring condition doesn't storm the channel.
+            dup = db.scalar(select(AlertNotification.id).where(
+                AlertNotification.channel_id == ch.id,
+                AlertNotification.event_type == event_type,
+                AlertNotification.job_id.is_(job_id) if job_id is None else AlertNotification.job_id == job_id,
+                AlertNotification.pipeline_id.is_(pipeline_id) if pipeline_id is None else AlertNotification.pipeline_id == pipeline_id,
+                AlertNotification.execution_id.is_(execution_id) if execution_id is None else AlertNotification.execution_id == execution_id,
+                AlertNotification.created_at >= cutoff,
+            ).limit(1))
+            if dup:
                 continue
             db.add(AlertNotification(
                 channel_id=ch.id, event_type=event_type, severity=severity, title=title, message=message,
