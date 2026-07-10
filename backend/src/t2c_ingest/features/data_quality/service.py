@@ -185,18 +185,16 @@ def evaluate_execution(db: Session, execution: Execution) -> DqResult | None:
 
 
 def _write_lineage(db: Session, execution: Execution, summary: dict, src, tgt, lidos, gravados) -> None:
-    """Insert an operational lineage row into the reference schema (t2c_data)."""
-    r = settings.reference_schema or "t2c_data"
+    """Enqueue an operational lineage row for reliable delivery to t2c_data (via the outbox).
+
+    Written in the same transaction as the DqResult, so the lineage is never lost; the worker's
+    publisher delivers it to t2c_data with retry and alerts on persistent failure.
+    """
     try:
-        db.execute(text(f"""
-            INSERT INTO "{r}".ingest_lineage
-              (execution_id, job_id, job_name, pipeline_id, source_connection, source_type,
-               target_connection, target_type, table_source, table_target, camada,
-               records_read, records_written, tipo_ingestao, status, executed_at)
-            VALUES
-              (:eid, :jid, :jname, :pid, :sconn, :stype, :tconn, :ttype, :tsource, :ttarget, :camada,
-               :rr, :rw, :tipo, :status, :exec_at)
-        """), {
+        from t2c_ingest.features.integration.outbox import enqueue
+
+        exec_at = execution.finished_at or datetime.now(timezone.utc)
+        enqueue(db, "lineage", {
             "eid": execution.id, "jid": execution.job_id, "jname": execution.target_name,
             "pid": execution.pipeline_id,
             "sconn": (src or {}).get("name"), "stype": (src or {}).get("type"),
@@ -205,7 +203,7 @@ def _write_lineage(db: Session, execution: Execution, summary: dict, src, tgt, l
             "camada": (tgt or {}).get("type"),
             "rr": lidos, "rw": gravados, "tipo": summary.get("tipo"),
             "status": summary.get("status"),
-            "exec_at": execution.finished_at or datetime.now(timezone.utc),
+            "exec_at": exec_at.isoformat(),
         })
-    except Exception as exc:  # noqa: BLE001 - lineage push must never break the run
-        print(f"[dq] lineage write skipped: {exc}")
+    except Exception as exc:  # noqa: BLE001 - enqueue must never break the run
+        print(f"[dq] lineage enqueue skipped: {exc}")

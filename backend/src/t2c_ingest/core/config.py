@@ -167,6 +167,8 @@ class Settings(BaseSettings):
     worker_lease_ttl_seconds: int = Field(default=120, validation_alias="WORKER_LEASE_TTL_SECONDS")
     # How often the worker refreshes the lease / checks cancel while a job runs.
     worker_heartbeat_seconds: int = Field(default=20, validation_alias="WORKER_HEARTBEAT_SECONDS")
+    # Integration outbox: retry attempts before a push to t2c_data is marked dead + alerted.
+    integration_max_attempts: int = Field(default=10, validation_alias="INTEGRATION_MAX_ATTEMPTS")
 
     # ── Cluster runtime image (libraries + jobs baked into a versioned image) ──
     runtime_image_name: str = Field(default="t2c-data-ingest-spark-runtime", validation_alias="RUNTIME_IMAGE_NAME")

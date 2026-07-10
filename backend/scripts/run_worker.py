@@ -524,6 +524,13 @@ def _run_orchestration() -> bool:
             _reap_stale_executions()  # recover orphaned runs
             _maybe_run_retention()    # prune old rows (interval-guarded)
             try:
+                from t2c_ingest.features.integration.outbox import publish_pending
+
+                with SessionLocal() as odb:
+                    publish_pending(odb)         # deliver queued t2c_data pushes (retry/alert)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[worker] outbox publish error: {exc}")
+            try:
                 from t2c_ingest.features.alerts.monitors import check_schedule_overdue
 
                 check_schedule_overdue(lockdb)   # alert if a schedule is overdue (scheduler stuck)
