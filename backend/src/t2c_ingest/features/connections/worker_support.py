@@ -27,6 +27,8 @@ class ResolvedConnections:
     env: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)   # safe, no secrets
     error: str | None = None
+    spark_confs: list[str] = field(default_factory=list)   # non-secret --conf (e.g. s3a endpoint)
+    secret_values: list[str] = field(default_factory=list)  # decrypted secrets to mask in logs
 
 
 def _prefix_for_flag(flag: str) -> str:
@@ -76,6 +78,12 @@ def resolve_connections(db: Session, arguments: list, *, test: bool = True) -> R
             result.error = f"Conexão '{conn.name}' está inativa e não pode ser usada."
             return result
 
+        if conn.connection_type == "s3":
+            _inject_s3(result, prefix, conn, test=test)
+            if result.error:
+                return result
+            continue
+
         password = decrypt_secret(conn.password_encrypted)
         result.env.update(
             {
@@ -103,3 +111,53 @@ def resolve_connections(db: Session, arguments: list, *, test: bool = True) -> R
                 return result
 
     return result
+
+
+def _inject_s3(result: "ResolvedConnections", prefix: str, conn, *, test: bool) -> None:
+    """Inject S3 config for a job: role-prefixed non-secret env, standard AWS_* creds (via env,
+    for boto3 AND the S3A default provider chain — never on the command line), and non-secret
+    spark s3a --conf. Secrets are tracked for log masking."""
+    from t2c_ingest.features.connections import s3_service
+
+    cfg = s3_service.s3_settings(conn)
+    creds = s3_service.resolve_aws_credentials(conn)  # {} for instance_profile/environment
+    result.env.update({
+        f"{prefix}TYPE": "s3",
+        f"{prefix}S3_BUCKET": cfg.bucket or "",
+        f"{prefix}S3_PREFIX": cfg.base_prefix or "",
+        f"{prefix}S3_REGION": cfg.region or "",
+        f"{prefix}S3_ENDPOINT": cfg.endpoint_url or "",
+        f"{prefix}S3_LAYER": cfg.default_layer or "",
+    })
+    # Standard AWS env (only via env -> never on the Spark command line). The S3A default
+    # credential chain and boto3 both read these.
+    ak = creds.get("aws_access_key_id")
+    if ak:
+        result.env["AWS_ACCESS_KEY_ID"] = ak
+        result.env["AWS_SECRET_ACCESS_KEY"] = creds.get("aws_secret_access_key", "")
+        result.secret_values += [ak, creds.get("aws_secret_access_key", "")]
+        if creds.get("aws_session_token"):
+            result.env["AWS_SESSION_TOKEN"] = creds["aws_session_token"]
+            result.secret_values.append(creds["aws_session_token"])
+    if cfg.region:
+        result.env.setdefault("AWS_REGION", cfg.region)
+        result.env.setdefault("AWS_DEFAULT_REGION", cfg.region)
+    if cfg.endpoint_url:
+        result.env.setdefault("AWS_ENDPOINT_URL_S3", cfg.endpoint_url)
+        # Non-secret spark s3a confs (endpoint/region/path-style/ssl). Credentials come from env.
+        result.spark_confs += [
+            f"spark.hadoop.fs.s3a.endpoint={cfg.endpoint_url}",
+            "spark.hadoop.fs.s3a.path.style.access=true",
+            f"spark.hadoop.fs.s3a.connection.ssl.enabled={'true' if cfg.ssl_enabled else 'false'}",
+        ]
+    if cfg.region:
+        result.spark_confs.append(f"spark.hadoop.fs.s3a.endpoint.region={cfg.region}")
+    result.notes.append(
+        f"{prefix[:-1].lower()}-connection '{conn.name}' -> s3 {cfg.bucket}/{cfg.base_prefix} "
+        f"(auth={cfg.auth_mode}, ativa)"
+    )
+    if test:
+        r = s3_service.test_connection(conn, attempt_write=False)
+        result.notes.append(f"  teste {conn.name}: {'OK' if r['success'] else 'FALHOU'} - {r['message']}")
+        if not r["success"]:
+            result.error = f"Teste S3 falhou para '{conn.name}': {r['message']}"

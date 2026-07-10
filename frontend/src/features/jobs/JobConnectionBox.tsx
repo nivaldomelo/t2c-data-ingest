@@ -34,9 +34,17 @@ export function JobConnectionBox({ role, c }: { role: string; c: JobConnectionIn
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-gray-900">{c.name}</span>
         {c.type && <span className="rounded bg-gray-200/70 px-1.5 py-0.5 text-[11px] font-medium uppercase text-gray-600">{c.type}</span>}
+        {c.type === "s3" && (
+          <span className="inline-flex gap-1">
+            {c.can_read && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">R</span>}
+            {c.can_write && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">W</span>}
+          </span>
+        )}
       </div>
       <p className="mt-1 break-all font-mono text-xs text-gray-500">
-        {c.host ?? "—"}{c.port ? `:${c.port}` : ""}{c.database ? `/${c.database}` : ""}
+        {c.type === "s3"
+          ? `s3://${c.bucket ?? "—"}${c.prefix ? `/${c.prefix}` : ""}${c.region ? ` · ${c.region}` : ""}`
+          : `${c.host ?? "—"}${c.port ? `:${c.port}` : ""}${c.database ? `/${c.database}` : ""}`}
       </p>
       <p className={cn("mt-1 text-xs font-medium", testTone)}>
         Último teste: {status === "success" ? "sucesso" : status === "failed" ? "falhou" : "não testado"}

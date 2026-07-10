@@ -71,6 +71,10 @@ class Execution(TimestampMixin, Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Runtime stack that actually ran this execution (traceability across the Spark 4 migration).
+    spark_version: Mapped[str | None] = mapped_column(String(50))
+    python_version: Mapped[str | None] = mapped_column(String(50))
+    runtime_image: Mapped[str | None] = mapped_column(String(300))
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

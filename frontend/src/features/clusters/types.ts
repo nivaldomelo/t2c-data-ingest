@@ -12,6 +12,10 @@ export interface Cluster {
   last_checked_at: string | null;
   last_validation_status: string | null;
   runtime_image: string | null;
+  spark_version: string | null;
+  python_version: string | null;
+  java_version: string | null;
+  scala_version: string | null;
   environment: string | null;
   environment_label: string | null;
   live: boolean;

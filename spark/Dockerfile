@@ -1,15 +1,22 @@
-# T2C Data Ingest Spark cluster image — Spark 3.5.1 + JDBC drivers (Postgres/MySQL) + S3A.
-# Master and worker use the SAME image; the command is set in docker-compose.
-# Mirrors the t2c-data-spark image so jobs behave identically across products.
-FROM apache/spark:3.5.1
+# T2C Data Ingest Spark 4 runtime image — Spark 4.1.2 / Java 17 / Scala 2.13 / Python 3.10.
+# Master, workers, driver and executors ALL use this same image, so the Python environment
+# (interpreter + libraries) is identical everywhere. Jobs + libs + JDBC jars are baked in, so
+# a fresh container/pod (local Docker or Kubernetes) runs without any live install.
+#
+# NOTE: the official Spark 4.1.2 Ubuntu image ships Python 3.10 (not 3.11). 3.10 is fully
+# supported by Spark 4 and by every library used here; installing 3.11 is not viable on arm64
+# (no deadsnakes packages). See docs/migracao-spark4.md.
+FROM apache/spark:4.1.2-scala2.13-java17-python3-ubuntu
 
 USER root
 
+# ── JDBC drivers + S3A (Data Lake) jars (baked so jobs never need --packages at run time) ──
+# hadoop-aws MUST match the Hadoop client shipped by Spark 4.1.2 (3.4.2), and Hadoop 3.4.x uses
+# the AWS SDK v2 "bundle" (não o aws-java-sdk-bundle v1).
 ARG POSTGRES_JDBC=42.7.10
 ARG MYSQL_JDBC=9.1.0
-ARG HADOOP_AWS=3.3.4
-ARG AWS_SDK_BUNDLE=1.12.262
-
+ARG HADOOP_AWS=3.4.2
+ARG AWS_SDK_V2_BUNDLE=2.24.6
 RUN set -eux; \
     cd /opt/spark/jars; \
     curl -fSL -o "postgresql-${POSTGRES_JDBC}.jar" \
@@ -18,18 +25,23 @@ RUN set -eux; \
       "https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/${MYSQL_JDBC}/mysql-connector-j-${MYSQL_JDBC}.jar"; \
     curl -fSL -o "hadoop-aws-${HADOOP_AWS}.jar" \
       "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS}/hadoop-aws-${HADOOP_AWS}.jar"; \
-    curl -fSL -o "aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar" \
-      "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar"
+    curl -fSL -o "bundle-${AWS_SDK_V2_BUNDLE}.jar" \
+      "https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/${AWS_SDK_V2_BUNDLE}/bundle-${AWS_SDK_V2_BUNDLE}.jar"
+
+# ── Python runtime libraries (driver + executors share these) ──
+COPY requirements.txt /opt/t2c/runtime/requirements.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && python3 -m pip install --no-cache-dir -r /opt/t2c/runtime/requirements.txt
 
 COPY conf/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
-# Python DB drivers used by the DRIVER side of jobs (e.g. reading the control table via psycopg,
-# MySQL upsert via pymysql). Baked here so the driver — which runs INSIDE a Spark container when
-# submitting via docker exec — has the same libs as the executors. Versions are py3.8-compatible.
-RUN python3 -m pip install --no-cache-dir "psycopg[binary]>=3.1,<3.2" "pymysql>=1.1,<1.2"
+# Driver + executors use the SAME interpreter.
+ENV PYSPARK_PYTHON=/usr/bin/python3
+ENV PYSPARK_DRIVER_PYTHON=/usr/bin/python3
+ENV PYTHONUNBUFFERED=1
 
-RUN mkdir -p /tmp/spark-local /tmp/spark-events && chown -R 185:185 /tmp/spark-local /tmp/spark-events
+RUN mkdir -p /tmp/spark-local /tmp/spark-events && chown -R spark:spark /tmp/spark-local /tmp/spark-events /opt/t2c
 
-USER 185
+USER spark
 
 EXPOSE 7077 8080 8081

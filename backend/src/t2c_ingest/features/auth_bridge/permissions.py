@@ -17,6 +17,10 @@ INGEST_CONNECTIONS_READ = "ingest:connections:read"
 INGEST_CONNECTIONS_WRITE = "ingest:connections:write"
 INGEST_CONNECTIONS_TEST = "ingest:connections:test"
 INGEST_CONNECTIONS_DELETE = "ingest:connections:delete"
+# S3 / Data Lake object access via a connection.
+INGEST_S3_READ = "ingest:s3:read"
+INGEST_S3_WRITE = "ingest:s3:write"
+INGEST_S3_LIST = "ingest:s3:list"
 # Creating a job (admin/editor).
 INGEST_JOBS_CREATE = "ingest:jobs:create"
 # Deleting a job (soft delete + code archival). Reserved to admins in this version.
@@ -91,6 +95,9 @@ ALL_PERMISSIONS = {
     INGEST_CONNECTIONS_WRITE,
     INGEST_CONNECTIONS_TEST,
     INGEST_CONNECTIONS_DELETE,
+    INGEST_S3_READ,
+    INGEST_S3_WRITE,
+    INGEST_S3_LIST,
     INGEST_JOBS_CREATE,
     INGEST_JOBS_DELETE,
     INGEST_JOBS_CODE_READ,
@@ -321,6 +328,8 @@ READ_ONLY_PERMISSIONS = frozenset({
     INGEST_CLUSTERS_READ,
     INGEST_AIRFLOW_READ,
     INGEST_CONNECTIONS_READ,
+    INGEST_S3_READ,
+    INGEST_S3_LIST,
     # NOTE: INGEST_JOBS_CODE_READ is deliberately NOT here — job source can embed hardcoded
     # credentials, so raw code is admin-only (consistent with masking variable/connection
     # secrets from view-only users). Re-add if code visibility is desired for viewers.

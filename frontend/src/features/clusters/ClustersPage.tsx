@@ -60,8 +60,8 @@ function ClusterCard({ cluster, canTest, onOpen, onTest, testing }: {
           <Metric label="Ambiente" value={cluster.environment_label ?? "—"} />
           <Metric label="Workers" value={cluster.worker_count ?? "—"} />
           <Metric label="Cores" value={cluster.total_cores ?? "—"} />
-          <Metric label="Memória" value={cluster.total_memory ?? "—"} />
-          <Metric label="Esperados" value={cluster.expected_workers ?? "—"} />
+          <Metric label="Spark" value={cluster.spark_version ?? "—"} />
+          <Metric label="Python" value={cluster.python_version ?? "—"} />
         </dl>
 
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-0.5 border-t border-gray-50 pt-2.5 text-xs text-gray-400">

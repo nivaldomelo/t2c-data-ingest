@@ -42,6 +42,10 @@ class ClusterOut(ClusterBase):
     last_checked_at: datetime | None = None
     last_validation_status: str | None = None
     runtime_image: str | None = None
+    spark_version: str | None = None
+    python_version: str | None = None
+    java_version: str | None = None
+    scala_version: str | None = None
     environment: str | None = None
     environment_label: str | None = None
     live: bool = False
