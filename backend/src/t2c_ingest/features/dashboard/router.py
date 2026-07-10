@@ -125,6 +125,14 @@ def operational(
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
 ) -> OperationalDashboard:
+    # Cache the (expensive: ~20 queries + Spark HTTP) payload briefly so many pollers across
+    # tabs/users collapse into one computation. TTL well under the frontend refetch interval.
+    from t2c_ingest.core.cache import cached
+
+    return cached("dashboard:operational", 15.0, lambda: _operational_compute(db))
+
+
+def _operational_compute(db: Session) -> OperationalDashboard:
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(hours=24)
     week_ago = now - timedelta(days=7)

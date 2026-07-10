@@ -84,7 +84,8 @@ export default function DashboardPage() {
   const { data: d, isLoading } = useQuery({
     queryKey: ["dashboard-operational"],
     queryFn: () => api.get<Operational>("/api/v1/dashboard/operational"),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
   });
 
   if (isLoading || !d) {

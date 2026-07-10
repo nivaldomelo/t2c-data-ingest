@@ -90,8 +90,8 @@ def list_clusters(
         select(Cluster).order_by(Cluster.name).offset(params.offset).limit(params.limit)
     ).all()
     summ = cluster_state.summarize(cluster_state.fetch_master_state())
-    items = [_enrich(c, summ, persist=True) for c in rows]
-    db.commit()
+    items = [_enrich(c, summ, persist=False) for c in rows]
+    db.rollback()  # live overlay is response-only — never write on a GET
     return PageOut.build(items, total, params)
 
 
@@ -122,8 +122,8 @@ def get_cluster(
     if not cluster:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found")
     summ = cluster_state.summarize(cluster_state.fetch_master_state())
-    out = _enrich(cluster, summ, persist=True)
-    db.commit()
+    out = _enrich(cluster, summ, persist=False)
+    db.rollback()  # live overlay is response-only — never write on a GET
     return out
 
 

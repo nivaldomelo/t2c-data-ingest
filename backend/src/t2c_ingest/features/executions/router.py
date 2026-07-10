@@ -78,7 +78,6 @@ def get_execution(
     execution = db.scalar(
         select(Execution)
         .options(
-            selectinload(Execution.logs),
             selectinload(Execution.artifacts),
             selectinload(Execution.runtime_parameters),
         )
@@ -86,6 +85,19 @@ def get_execution(
     )
     if not execution:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution not found")
+    # Bound the payload: never load the full log collection into the detail (it can be huge and
+    # is re-fetched every few seconds while running). Load only a tail for display; the full,
+    # paginated log is available at /executions/{id}/logs.
+    _LOG_TAIL = 1000
+    tail = db.scalars(
+        select(ExecutionLog).where(ExecutionLog.execution_id == execution_id)
+        .order_by(ExecutionLog.seq.desc(), ExecutionLog.id.desc()).limit(_LOG_TAIL)
+    ).all()[::-1]
+    # Populate the relationship with the bounded tail WITHOUT marking it dirty (set_committed_value
+    # avoids a lazy full-load and prevents autoflush from touching the collection).
+    from sqlalchemy.orm import attributes
+
+    attributes.set_committed_value(execution, "logs", tail)
     detail = ExecutionDetailOut.model_validate(execution)
     detail.execution_type = execution.target_type
     if execution.schedule_id:
@@ -103,7 +115,7 @@ def get_execution(
             detail.scheduled_for = run.scheduled_for
             detail.triggered_at = run.triggered_at
     _enrich_pipeline(db, execution, detail)
-    _enrich_from_logs(execution, detail)
+    _enrich_from_logs(db, execution, detail)
     return detail
 
 
@@ -130,9 +142,20 @@ def _enrich_pipeline(db: Session, execution: Execution, detail: ExecutionDetailO
         detail.pipeline_name = pipeline.name if pipeline else None
 
 
-def _enrich_from_logs(execution: Execution, detail: ExecutionDetailOut) -> None:
-    """Parse structured metadata (connections / ingest summary) from the raw logs."""
-    logs_text = "\n".join(log.message for log in execution.logs)
+def _enrich_from_logs(db: Session, execution: Execution, detail: ExecutionDetailOut) -> None:
+    """Parse structured metadata (connections / ingest summary) without loading the full log.
+
+    Reads only the connection-note and INGEST_SUMMARY lines (bounded query) plus final_message,
+    so a huge log never has to be joined in memory."""
+    from sqlalchemy import or_ as _or
+
+    rows = db.scalars(
+        select(ExecutionLog.message).where(
+            ExecutionLog.execution_id == execution.id,
+            _or(ExecutionLog.message.like("%-connection%"), ExecutionLog.message.like("%INGEST_SUMMARY%")),
+        ).order_by(ExecutionLog.seq).limit(300)
+    ).all()
+    logs_text = "\n".join(list(rows) + ([execution.final_message] if execution.final_message else []))
     if not logs_text.strip():
         return
     source, target = parse_connections(logs_text)
