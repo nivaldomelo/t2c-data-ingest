@@ -345,6 +345,27 @@ def _process_runtime_jobs() -> bool:
     return ran
 
 
+_last_retention = 0.0
+
+
+def _maybe_run_retention() -> None:
+    global _last_retention
+    interval = settings.retention_interval_seconds
+    now = time.monotonic()
+    if now - _last_retention < interval:
+        return
+    _last_retention = now
+    try:
+        from t2c_ingest.services.retention import run_retention
+
+        with SessionLocal() as db:
+            summary = run_retention(db)
+        if summary:
+            print(f"[retention] pruned: {summary}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[retention] error: {exc}")
+
+
 def main() -> None:
     from t2c_ingest.core.bootstrap import enforce_secure_config
 
@@ -372,6 +393,8 @@ def main() -> None:
         # Process one queued runtime build/validation per tick.
         if _process_runtime_jobs():
             ran = True
+        # Prune old rows from append-only tables (bounded, interval-guarded).
+        _maybe_run_retention()
         if not ran:
             time.sleep(poll)
 

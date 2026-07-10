@@ -141,6 +141,14 @@ class Settings(BaseSettings):
     login_max_attempts: int = Field(default=8, validation_alias="LOGIN_MAX_ATTEMPTS")
     login_window_seconds: int = Field(default=300, validation_alias="LOGIN_WINDOW_SECONDS")
 
+    # ── Retention (append-only tables). 0 disables that table's pruning. Days. ──
+    retention_execution_logs_days: int = Field(default=90, validation_alias="RETENTION_EXECUTION_LOGS_DAYS")
+    retention_executions_days: int = Field(default=0, validation_alias="RETENTION_EXECUTIONS_DAYS")
+    retention_schedule_runs_days: int = Field(default=90, validation_alias="RETENTION_SCHEDULE_RUNS_DAYS")
+    retention_alert_notifications_days: int = Field(default=90, validation_alias="RETENTION_ALERT_NOTIFICATIONS_DAYS")
+    retention_audit_days: int = Field(default=0, validation_alias="RETENTION_AUDIT_DAYS")
+    retention_interval_seconds: int = Field(default=3600, validation_alias="RETENTION_INTERVAL_SECONDS")
+
     # ── Cluster runtime image (libraries + jobs baked into a versioned image) ──
     runtime_image_name: str = Field(default="t2c-data-ingest-spark-runtime", validation_alias="RUNTIME_IMAGE_NAME")
     runtime_base_image: str = Field(default="apache/spark:3.5.1", validation_alias="RUNTIME_BASE_IMAGE")
