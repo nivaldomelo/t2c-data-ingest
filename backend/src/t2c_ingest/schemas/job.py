@@ -92,6 +92,12 @@ class JobConnectionInfo(BaseModel):
     port: int | None = None
     database: str | None = None
     last_test_status: str | None = None
+    # S3 / Data Lake (non-secret) — populated when type == "s3"
+    bucket: str | None = None
+    prefix: str | None = None
+    region: str | None = None
+    can_read: bool | None = None
+    can_write: bool | None = None
 
 
 class JobExecLite(BaseModel):

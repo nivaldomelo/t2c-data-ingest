@@ -104,6 +104,9 @@ export function ClusterDetailModal({ cluster, open, onClose }: { cluster: Cluste
               <Field label="Workers">{cluster.worker_count ?? "—"}</Field>
               <Field label="Cores totais">{cluster.total_cores ?? "—"}</Field>
               <Field label="Memória total">{cluster.total_memory ?? "—"}</Field>
+              <Field label="Spark">{cluster.spark_version ?? "—"}</Field>
+              <Field label="Python">{cluster.python_version ?? "—"}</Field>
+              <Field label="Java / Scala">{(cluster.java_version ?? "—") + " / " + (cluster.scala_version ?? "—")}</Field>
               <Field label="Runtime">{cluster.runtime_image ? <span className="font-mono text-xs">{cluster.runtime_image}</span> : "Não informado"}</Field>
               <Field label="Última verificação">{fmtDate(cluster.last_checked_at)}</Field>
               <Field label="Última validação">{cluster.last_validation_status ?? "Não validado"}</Field>

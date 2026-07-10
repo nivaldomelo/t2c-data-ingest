@@ -5,8 +5,25 @@ import type { Column } from "@/components/ui";
 import { Plug } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ConnectionStatusBadge } from "@/features/connections/ConnectionStatusBadge";
-import type { Connection } from "@/features/connections/types";
+import type { Connection, S3ExtraParams } from "@/features/connections/types";
 import { TYPE_LABEL } from "@/features/connections/types";
+
+function s3Of(c: Connection): S3ExtraParams {
+  return (c.extra_params ?? {}) as S3ExtraParams;
+}
+
+function RwChips({ c }: { c: Connection }) {
+  return (
+    <span className="ml-1.5 inline-flex gap-1 align-middle">
+      {c.can_read && (
+        <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">R</span>
+      )}
+      {c.can_write && (
+        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">W</span>
+      )}
+    </span>
+  );
+}
 
 interface Perms {
   write: boolean;
@@ -78,15 +95,35 @@ export function ConnectionTable({
       key: "type",
       header: "Tipo",
       render: (c) => (
-        <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-          {TYPE_LABEL[c.connection_type]}
+        <span className="whitespace-nowrap">
+          <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+            {TYPE_LABEL[c.connection_type]}
+          </span>
+          {c.connection_type === "s3" && <RwChips c={c} />}
         </span>
       ),
     },
-    { key: "host", header: "Host", render: (c) => <span className="font-mono text-xs text-gray-600">{c.host ?? "—"}</span> },
-    { key: "port", header: "Porta", align: "center", render: (c) => <span className="tabular-nums text-gray-600">{c.port ?? "—"}</span> },
-    { key: "db", header: "Banco", render: (c) => <span className="text-gray-600">{c.database_name ?? "—"}</span> },
-    { key: "schema", header: "Schema", render: (c) => <span className="text-gray-600">{c.schema_name ?? "—"}</span> },
+    {
+      key: "host",
+      header: "Host / Bucket",
+      render: (c) =>
+        c.connection_type === "s3" ? (
+          <span className="font-mono text-xs text-gray-600">{s3Of(c).bucket_name ?? "—"}</span>
+        ) : (
+          <span className="font-mono text-xs text-gray-600">{c.host ?? "—"}</span>
+        ),
+    },
+    { key: "port", header: "Porta", align: "center", render: (c) => <span className="tabular-nums text-gray-600">{c.connection_type === "s3" ? "—" : c.port ?? "—"}</span> },
+    {
+      key: "db",
+      header: "Banco / Região",
+      render: (c) => <span className="text-gray-600">{c.connection_type === "s3" ? s3Of(c).aws_region ?? "—" : c.database_name ?? "—"}</span>,
+    },
+    {
+      key: "schema",
+      header: "Schema / Prefixo",
+      render: (c) => <span className="text-gray-600">{c.connection_type === "s3" ? s3Of(c).base_prefix ?? "—" : c.schema_name ?? "—"}</span>,
+    },
     { key: "test", header: "Último teste", render: (c) => <ConnectionStatusBadge status={c.last_test_status} /> },
     {
       key: "tested_at",
@@ -138,7 +175,7 @@ export function ConnectionTable({
         <EmptyState
           icon={<Plug size={24} />}
           title="Nenhuma conexão cadastrada"
-          description="Cadastre uma conexão PostgreSQL ou MySQL para usar em jobs e pipelines."
+          description="Cadastre uma conexão PostgreSQL, MySQL ou AWS S3 / Data Lake para usar em jobs e pipelines."
         />
       }
     />

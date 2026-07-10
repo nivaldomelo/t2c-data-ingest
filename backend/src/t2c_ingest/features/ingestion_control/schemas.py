@@ -22,6 +22,10 @@ class IngestionControlBase(BaseModel):
     tipo_ingestao: str | None = None
     colunas_chave: str | None = None
     origem_id: str | None = None
+    # Destino S3/Data Lake: conexão de destino + bag de configuração (bucket/prefixo/camada/
+    # formato/write_mode/partições/compressão). Sem segredos — credenciais ficam na conexão.
+    destino_id: str | None = None
+    destino_config: dict | None = None
 
 
 class IngestionControlCreate(IngestionControlBase):
@@ -47,6 +51,8 @@ class IngestionControlUpdate(BaseModel):
     tipo_ingestao: str | None = None
     colunas_chave: str | None = None
     origem_id: str | None = None
+    destino_id: str | None = None
+    destino_config: dict | None = None
 
 
 class IngestionControlOut(IngestionControlBase):

@@ -355,9 +355,16 @@ def _conn_info(conn: Connection | None) -> JobConnectionInfo | None:
     """Build safe connection metadata (no secrets) from a Connection row."""
     if not conn:
         return None
+    ep = conn.extra_params or {}
+    is_s3 = conn.connection_type == "s3"
     return JobConnectionInfo(
         id=conn.id, name=conn.name, type=conn.connection_type, host=conn.host,
         port=conn.port, database=conn.database_name, last_test_status=conn.last_test_status,
+        bucket=ep.get("bucket_name") if is_s3 else None,
+        prefix=ep.get("base_prefix") if is_s3 else None,
+        region=ep.get("aws_region") if is_s3 else None,
+        can_read=conn.can_read if is_s3 else None,
+        can_write=conn.can_write if is_s3 else None,
     )
 
 

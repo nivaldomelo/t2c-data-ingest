@@ -5,14 +5,27 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Page } from "@/lib/api";
 import { PrimaryButton, SecondaryButton } from "@/components/ui";
-import type { IngestionControl } from "@/features/ingestion-control/types";
+import type { IngestionControl, S3DestinoConfig } from "@/features/ingestion-control/types";
 import {
+  COMPRESSION_VALUES,
   DESTINO_VALUES,
+  FILE_FORMAT_VALUES,
   ORIGEM_VALUES,
+  S3_DESTINOS,
   STATUS_VALUES,
   TIPO_INGESTAO_VALUES,
   TIPO_TABELA_VALUES,
+  WRITE_MODE_VALUES,
 } from "@/features/ingestion-control/types";
+
+interface ConnMin {
+  id: number;
+  name: string;
+  connection_type: string;
+  can_read?: boolean;
+  can_write?: boolean;
+  extra_params?: { bucket_name?: string; base_prefix?: string; default_layer?: string } | null;
+}
 
 export type ControlPayload = Partial<IngestionControl> & { nome_tabela: string };
 
@@ -66,13 +79,25 @@ export function IngestionControlForm({
     dados_sensiveis: initial?.dados_sensiveis ?? "",
     status: initial?.status ?? "",
     ultima_execucao: toLocal(initial?.ultima_execucao),
+    // Destino S3 / Data Lake
+    destino_id: initial?.destino_id ?? "",
+    target_bucket: initial?.destino_config?.target_bucket ?? "",
+    target_prefix: initial?.destino_config?.target_prefix ?? "",
+    target_layer: initial?.destino_config?.target_layer ?? "",
+    file_format: initial?.destino_config?.file_format ?? "parquet",
+    write_mode: initial?.destino_config?.write_mode ?? "append",
+    partition_columns: initial?.destino_config?.partition_columns ?? "",
+    compression: initial?.destino_config?.compression ?? "snappy",
   });
   const [error, setError] = useState<string | null>(null);
 
   const connections = useQuery({
     queryKey: ["connections-min"],
-    queryFn: () => api.get<Page<{ id: number; name: string; connection_type: string }>>("/api/v1/connections?page=1&page_size=200"),
+    queryFn: () => api.get<Page<ConnMin>>("/api/v1/connections?page=1&page_size=200"),
   });
+  const conns = connections.data?.items ?? [];
+  const isS3Destino = S3_DESTINOS.includes(String(v.destino));
+  const writableS3 = conns.filter((c) => c.connection_type === "s3" && c.can_write);
 
   function set(k: string, val: string | boolean) {
     setV((p) => ({ ...p, [k]: val }));
@@ -91,6 +116,27 @@ export function IngestionControlForm({
       return val === "" ? null : val;
     };
     const dt = (k: string) => (v[k] ? new Date(String(v[k])).toISOString() : null);
+
+    // Configuração de destino S3 apenas quando o destino é Data Lake (senão limpa).
+    let destinoConfig: S3DestinoConfig | null = null;
+    if (isS3Destino) {
+      const prefix = String(v.target_prefix ?? "").trim().replace(/^\/+|\/+$/g, "");
+      if (prefix.split("/").includes("..")) {
+        setError("O prefixo de destino não pode conter '..'.");
+        return;
+      }
+      const cfg: S3DestinoConfig = {
+        target_bucket: s("target_bucket") ?? undefined,
+        target_prefix: prefix || undefined,
+        target_layer: s("target_layer") ?? undefined,
+        file_format: s("file_format") ?? undefined,
+        write_mode: s("write_mode") ?? undefined,
+        partition_columns: s("partition_columns") ?? undefined,
+        compression: s("compression") ?? undefined,
+      };
+      destinoConfig = Object.values(cfg).some((x) => x != null) ? cfg : null;
+    }
+
     onSubmit({
       nome_tabela: String(v.nome_tabela).trim(),
       grupo: s("grupo"),
@@ -100,6 +146,8 @@ export function IngestionControlForm({
       origem: s("origem"),
       origem_id: s("origem_id"),
       destino: s("destino"),
+      destino_id: s("destino_id"),
+      destino_config: destinoConfig,
       tipo_ingestao: s("tipo_ingestao"),
       coluna_data: s("coluna_data"),
       coluna_ultima_alteracao: s("coluna_ultima_alteracao"),
@@ -158,14 +206,78 @@ export function IngestionControlForm({
               title="Usar uma conexão cadastrada"
             >
               <option value="">Usar conexão…</option>
-              {(connections.data?.items ?? []).map((c) => (
+              {conns.map((c) => (
                 <option key={c.id} value={String(c.id)}>{c.name} ({c.connection_type})</option>
               ))}
             </select>
           </div>
           <p className={hint}>Preencha manualmente ou selecione uma conexão cadastrada (salva o id da conexão).</p>
         </div>
+
+        {isS3Destino && (
+          <div className="sm:col-span-2">
+            <label className={label}>Conexão de destino (S3 / Data Lake)</label>
+            <select
+              className={field}
+              value={String(v.destino_id)}
+              onChange={(e) => {
+                const id = e.target.value;
+                set("destino_id", id);
+                // Pré-preenche bucket/prefixo/camada com os defaults da conexão selecionada.
+                const c = writableS3.find((x) => String(x.id) === id);
+                if (c?.extra_params) {
+                  if (!String(v.target_bucket).trim() && c.extra_params.bucket_name) set("target_bucket", c.extra_params.bucket_name);
+                  if (!String(v.target_prefix).trim() && c.extra_params.base_prefix) set("target_prefix", c.extra_params.base_prefix);
+                  if (!String(v.target_layer).trim() && c.extra_params.default_layer) set("target_layer", c.extra_params.default_layer);
+                }
+              }}
+            >
+              <option value="">Selecione uma conexão S3 com escrita…</option>
+              {writableS3.map((c) => (
+                <option key={c.id} value={String(c.id)}>{c.name}</option>
+              ))}
+            </select>
+            <p className={hint}>
+              Apenas conexões S3 com escrita habilitada aparecem aqui. As credenciais ficam na conexão — nunca neste controle.
+            </p>
+          </div>
+        )}
       </Section>
+
+      {isS3Destino && (
+        <Section title="2b · Destino S3 / Data Lake">
+          <div>
+            <label className={label}>Bucket</label>
+            <input className={field} value={String(v.target_bucket)} onChange={(e) => set("target_bucket", e.target.value)} placeholder="ex.: t2c-datalake" />
+            <p className={hint}>Vazio usa o bucket padrão da conexão.</p>
+          </div>
+          <div>
+            <label className={label}>Prefixo de destino</label>
+            <input className={field} value={String(v.target_prefix)} onChange={(e) => set("target_prefix", e.target.value)} placeholder="ex.: bronze/vendas" />
+          </div>
+          <div>
+            <label className={label}>Camada (layer)</label>
+            <input className={field} value={String(v.target_layer)} onChange={(e) => set("target_layer", e.target.value)} placeholder="bronze / silver / gold" />
+          </div>
+          <div>
+            <label className={label}>Formato do arquivo</label>
+            <select className={field} value={String(v.file_format)} onChange={(e) => set("file_format", e.target.value)}>{opt(FILE_FORMAT_VALUES)}</select>
+          </div>
+          <div>
+            <label className={label}>Modo de escrita</label>
+            <select className={field} value={String(v.write_mode)} onChange={(e) => set("write_mode", e.target.value)}>{opt(WRITE_MODE_VALUES)}</select>
+          </div>
+          <div>
+            <label className={label}>Compressão</label>
+            <select className={field} value={String(v.compression)} onChange={(e) => set("compression", e.target.value)}>{opt(COMPRESSION_VALUES)}</select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className={label}>Colunas de partição</label>
+            <input className={field} value={String(v.partition_columns)} onChange={(e) => set("partition_columns", e.target.value)} placeholder="ex.: ano,mes,dia" />
+            <p className={hint}>Separadas por vírgula. Padrão do Data Lake: ano/mes/dia.</p>
+          </div>
+        </Section>
+      )}
 
       <Section title="3 · Estratégia de ingestão">
         <div>

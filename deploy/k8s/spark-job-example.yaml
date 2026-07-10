@@ -1,0 +1,45 @@
+# Exemplo conceitual de SparkApplication (Spark Operator) para o T2C Data Ingest no Kubernetes/EKS.
+# A MESMA imagem de runtime versionada (driver + executores) já traz Spark 4, Python 3.10, libs
+# e jars JDBC — novos pods sobem prontos, sem instalação em tempo de execução.
+#
+# Requer: imagem publicada num registry e o Spark Operator instalado no cluster.
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: t2c-ingest-job
+  namespace: data-ingest
+spec:
+  type: Python
+  mode: cluster
+  image: <registry>/t2c-data-ingest-spark-runtime:4.1.2-python3.10
+  imagePullPolicy: IfNotPresent
+  sparkVersion: "4.1.2"
+  mainApplicationFile: "local:///opt/t2c/spark/jobs/postgres_to_mysql/postgres_to_mysql_controlled_ingest.py"
+  arguments:
+    - "--table-name"
+    - "massa_teste.clientes"
+    - "--source-connection"
+    - "postgres_1"
+    - "--target-connection"
+    - "mysql_1"
+  sparkConf:
+    spark.pyspark.python: "/usr/bin/python3"
+    spark.pyspark.driver.python: "/usr/bin/python3"
+    spark.sql.shuffle.partitions: "8"
+  driver:
+    cores: 1
+    memory: "2g"
+    serviceAccount: t2c-ingest-spark
+    # Credenciais das conexões (SOURCE_*/TARGET_*) e DATABASE_URL via Secret montado como env.
+    envFrom:
+      - secretRef:
+          name: t2c-ingest-job-secrets
+  executor:
+    instances: 3          # execução distribuída real (equivalente aos 3 workers locais)
+    cores: 1
+    memory: "2g"
+# Observações:
+# - Nada de docker.sock: o build da imagem é passo de CI e o deploy é declarativo (rollback =
+#   trocar a tag da imagem).
+# - A validação distribuída (validate_spark4_runtime.py) pode rodar como um SparkApplication
+#   idêntico apontando para local:///opt/t2c/spark/jobs/system/validate_spark4_runtime.py.

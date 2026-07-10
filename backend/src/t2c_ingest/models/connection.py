@@ -9,10 +9,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from t2c_ingest.models.base import Base
 from t2c_ingest.models.common import TimestampMixin
 
-# postgres | mysql
-CONNECTION_TYPES = ("postgres", "mysql")
+# postgres | mysql | s3
+CONNECTION_TYPES = ("postgres", "mysql", "s3")
 # success | failed | not_tested
 TEST_STATUSES = ("success", "failed", "not_tested")
+# S3 authentication modes.
+S3_AUTH_MODES = ("access_key", "iam_role", "instance_profile", "environment")
 
 DEFAULT_PORTS = {"postgres": 5432, "mysql": 3306}
 
@@ -34,7 +36,16 @@ class Connection(TimestampMixin, Base):
     username: Mapped[str | None] = mapped_column(String(255))
     password_encrypted: Mapped[str | None] = mapped_column(Text)
     schema_name: Mapped[str | None] = mapped_column(String(255))
+    # Non-secret, type-specific config (S3: aws_region, bucket_name, base_prefix, default_layer,
+    # auth_mode, role_arn, external_id, endpoint_url). Secrets live in the *_encrypted columns.
     extra_params: Mapped[dict | None] = mapped_column(JSONB)
+    # S3 credentials (access_key mode) — encrypted at rest (Fernet), never returned by the API.
+    aws_access_key_id_encrypted: Mapped[str | None] = mapped_column(Text)
+    aws_secret_access_key_encrypted: Mapped[str | None] = mapped_column(Text)
+    aws_session_token_encrypted: Mapped[str | None] = mapped_column(Text)
+    # Whether this connection may be used as a source (read) and/or destination (write).
+    can_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    can_write: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     ssl_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_test_status: Mapped[str] = mapped_column(String(20), nullable=False, default="not_tested")

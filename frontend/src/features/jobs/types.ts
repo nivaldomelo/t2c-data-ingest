@@ -56,6 +56,11 @@ export interface JobConnectionInfo {
   port: number | null;
   database: string | null;
   last_test_status: string | null;
+  bucket?: string | null;
+  prefix?: string | null;
+  region?: string | null;
+  can_read?: boolean | null;
+  can_write?: boolean | null;
 }
 
 export interface JobExecution {

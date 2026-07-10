@@ -1,0 +1,13 @@
+# Runtime Python libs baked into the Spark 4 image (driver == executors).
+# Compatible with Python 3.10 (official apache/spark:4.1.2 image) and Spark 4.
+# NOTE: pyspark is provided by the Spark distribution itself — do NOT pip install it here.
+pandas>=2.2.0
+pyarrow>=15.0.0
+numpy>=1.26.0
+requests>=2.32.0
+sqlalchemy>=2.0.0
+psycopg[binary]>=3.2.0
+pymysql>=1.1.1
+boto3>=1.35.0
+s3fs>=2024.6.0
+python-dotenv>=1.0.1

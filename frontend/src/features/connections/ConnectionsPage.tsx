@@ -12,6 +12,7 @@ import { ConnectionTable } from "@/features/connections/ConnectionTable";
 import { ConnectionForm } from "@/features/connections/ConnectionForm";
 import type { ConnectionSubmitPayload } from "@/features/connections/ConnectionForm";
 import { ConnectionStatusBadge } from "@/features/connections/ConnectionStatusBadge";
+import { S3ConnectionDetail } from "@/features/connections/S3ConnectionDetail";
 import type {
   Connection,
   ConnectionSummary,
@@ -168,6 +169,7 @@ export default function ConnectionsPage() {
           <option value="">Todos os tipos</option>
           <option value="postgres">PostgreSQL</option>
           <option value="mysql">MySQL</option>
+          <option value="s3">AWS S3 / Data Lake</option>
         </select>
         <select className={selectCls} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Qualquer teste</option>
@@ -218,11 +220,13 @@ export default function ConnectionsPage() {
         onClose={() => setViewing(null)}
         title={viewing?.name ?? "Conexão"}
         description={viewing?.description ?? undefined}
+        width={viewing?.connection_type === "s3" ? "max-w-3xl" : undefined}
         footer={
           <SecondaryButton onClick={() => setViewing(null)}>Fechar</SecondaryButton>
         }
       >
-        {viewing && (
+        {viewing && viewing.connection_type === "s3" && <S3ConnectionDetail conn={viewing} />}
+        {viewing && viewing.connection_type !== "s3" && (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <Detail label="Tipo" value={TYPE_LABEL[viewing.connection_type]} />
             <Detail label="Último teste" value={<ConnectionStatusBadge status={viewing.last_test_status} />} />

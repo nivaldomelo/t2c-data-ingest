@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, MetaData, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from t2c_ingest.core.config import settings
@@ -47,3 +48,7 @@ class IngestionControl(ControleBase):
     tipo_ingestao: Mapped[str | None] = mapped_column(Text)
     colunas_chave: Mapped[str | None] = mapped_column(Text)
     origem_id: Mapped[str | None] = mapped_column(Text)
+    # Conexão de destino (id, mesmo padrão texto de origem_id) e configuração de destino S3/Data
+    # Lake (bucket/prefixo/camada/formato/write_mode/partições/compressão) num único JSONB.
+    destino_id: Mapped[str | None] = mapped_column(Text)
+    destino_config: Mapped[dict | None] = mapped_column(JSONB)

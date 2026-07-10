@@ -58,6 +58,12 @@ def _enrich(cluster: Cluster, summ: dict, persist: bool) -> ClusterOut:
     out.environment = env
     out.environment_label = _ENV_LABEL.get(env, env)
     out.live = bool(summ.get("reachable"))
+    # Runtime stack (from config; the cluster is served by the versioned Spark runtime image).
+    out.spark_version = settings.spark_version
+    out.python_version = settings.spark_python_version
+    out.java_version = settings.spark_java_version
+    out.scala_version = settings.spark_scala_version
+    out.runtime_image = cluster.runtime_image or settings.runtime_worker_image_tag
     return out
 
 
