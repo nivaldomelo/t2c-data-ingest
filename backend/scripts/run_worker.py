@@ -481,14 +481,47 @@ def _maybe_run_retention() -> None:
         print(f"[retention] error: {exc}")
 
 
+# Postgres advisory-lock key that serializes ORCHESTRATION across worker replicas. Job
+# execution itself stays concurrent (SKIP LOCKED); only the shared orchestration below runs on
+# a single worker at a time, so scaling to N workers cannot double-release a pipeline step,
+# double-dispatch an alert or double-roll a backfill.
+_ORCH_LOCK_KEY = 728411001
+
+
+def _run_orchestration() -> bool:
+    """Run the shared orchestration under an advisory lock. Returns True if any work happened.
+    A worker that can't get the lock simply skips (another worker is orchestrating)."""
+    from sqlalchemy import text
+
+    ran = False
+    with SessionLocal() as lockdb:
+        got = lockdb.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _ORCH_LOCK_KEY}).scalar()
+        if not got:
+            return False
+        try:
+            _advance_pipelines()      # release ready steps, finalize pipelines
+            _advance_backfills()      # roll up backfill status
+            _dispatch_alerts()        # deliver queued notifications
+            if _process_library_actions():
+                ran = True
+            if _process_runtime_jobs():
+                ran = True
+            _reap_stale_executions()  # recover orphaned runs
+            _maybe_run_retention()    # prune old rows (interval-guarded)
+        finally:
+            lockdb.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _ORCH_LOCK_KEY})
+    return ran
+
+
 def main() -> None:
     from t2c_ingest.core.bootstrap import enforce_secure_config
 
     enforce_secure_config()  # refuse to run under insecure prod defaults (worker decrypts secrets)
     poll = settings.worker_poll_interval_seconds
-    print(f"[worker] started; polling every {poll}s; spark master={settings.spark_master_url}")
+    print(f"[worker] started ({_WORKER_ID}); polling every {poll}s; spark master={settings.spark_master_url}")
     while True:
         ran = False
+        # Job execution: concurrent across replicas (each row claimed once via SKIP LOCKED).
         with SessionLocal() as db:
             execution = _claim_next(db)
             if execution is not None:
@@ -496,22 +529,9 @@ def main() -> None:
                 print(f"[worker] running execution {execution.id} ({execution.target_name})")
                 _run_one(db, execution)
                 print(f"[worker] execution {execution.id} -> {execution.status}")
-        # Progress in-flight pipelines (release ready steps, finalize) every tick.
-        _advance_pipelines()
-        # Roll up backfill status once spawned executions/pipelines finish.
-        _advance_backfills()
-        # Deliver queued alert notifications.
-        _dispatch_alerts()
-        # Process one queued library install/uninstall per tick.
-        if _process_library_actions():
+        # Orchestration: serialized across replicas via advisory lock.
+        if _run_orchestration():
             ran = True
-        # Process one queued runtime build/validation per tick.
-        if _process_runtime_jobs():
-            ran = True
-        # Recover executions orphaned by a crashed worker (lease expired).
-        _reap_stale_executions()
-        # Prune old rows from append-only tables (bounded, interval-guarded).
-        _maybe_run_retention()
         if not ran:
             time.sleep(poll)
 
