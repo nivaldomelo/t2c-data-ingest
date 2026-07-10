@@ -18,6 +18,19 @@ export interface IngestionControl {
   tipo_ingestao: string | null;
   colunas_chave: string | null;
   origem_id: string | null;
+  destino_id: string | null;
+  destino_config: S3DestinoConfig | null;
+}
+
+/** Configuração de destino S3 / Data Lake (sem segredos — credenciais ficam na conexão). */
+export interface S3DestinoConfig {
+  target_bucket?: string;
+  target_prefix?: string;
+  target_layer?: string;
+  file_format?: string;
+  write_mode?: string;
+  partition_columns?: string;
+  compression?: string;
 }
 
 export interface IngestionControlSummary {
@@ -33,6 +46,12 @@ export const TIPO_TABELA_VALUES = ["FULL", "INCREMENTAL", "DIMENSAO", "FATO", "C
 export const TIPO_INGESTAO_VALUES = ["FULL", "INCREMENTAL", "CDC", "D-1", "MANUAL"];
 export const ORIGEM_VALUES = ["MYSQL", "POSTGRES", "SQLSERVER", "ORACLE", "API", "S3", "CSV", "PARQUET"];
 export const DESTINO_VALUES = ["BRONZE", "SILVER", "GOLD", "POSTGRES", "S3", "DATALAKE"];
+
+/** Destinos que gravam no Data Lake e habilitam a configuração S3. */
+export const S3_DESTINOS = ["S3", "DATALAKE", "BRONZE", "SILVER", "GOLD"];
+export const FILE_FORMAT_VALUES = ["parquet", "csv", "json", "orc", "avro", "delta"];
+export const WRITE_MODE_VALUES = ["append", "overwrite", "ignore", "errorifexists"];
+export const COMPRESSION_VALUES = ["snappy", "gzip", "zstd", "lz4", "none"];
 
 export function fmtDate(t: string | null | undefined): string {
   return t ? new Date(t).toLocaleString("pt-BR") : "—";

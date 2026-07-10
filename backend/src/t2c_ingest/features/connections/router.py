@@ -237,15 +237,19 @@ def s3_objects(
     prefix: str | None = Query(None),
     limit: int = Query(50, ge=1, le=1000),
     db: Session = Depends(get_db),
-    _: CurrentUser = Depends(require_permission(perms.INGEST_S3_LIST)),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_S3_LIST)),
 ) -> S3ObjectsOut:
     conn = _require_s3(db, connection_id)
     try:
-        return S3ObjectsOut(**s3_service.list_objects(conn, prefix=prefix, limit=limit))
+        result = S3ObjectsOut(**s3_service.list_objects(conn, prefix=prefix, limit=limit))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Falha ao listar objetos: {type(exc).__name__}") from exc
+    record_audit(db, action="S3_OBJECT_LISTED", user=user, entity_type="connection",
+                 entity_id=conn.id, detail={"prefix": result.prefix, "count": len(result.items)})
+    db.commit()
+    return result
 
 
 @router.get("/{connection_id}/s3/prefixes", response_model=S3ObjectsOut)

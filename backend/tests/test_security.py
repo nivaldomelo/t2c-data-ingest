@@ -1,10 +1,14 @@
 """Security-critical unit tests: crypto, log masking, SSRF guard, RBAC resolution."""
+from types import SimpleNamespace
+
 import pytest
 
 from t2c_ingest.core.crypto import decrypt_secret, encrypt_secret
 from t2c_ingest.core.log_masking import mask_secrets
 from t2c_ingest.core import ssrf
 from t2c_ingest.features.auth_bridge import permissions as perms
+from t2c_ingest.features.connections import s3_service
+from t2c_ingest.features.connections.worker_support import _inject_s3, ResolvedConnections
 
 
 def test_crypto_roundtrip():
@@ -19,6 +23,77 @@ def test_mask_secrets_patterns():
     assert "MyP4ss" not in mask_secrets("postgresql://user:MyP4ss@host/db")
     assert "abc.def" not in mask_secrets("Authorization: Bearer abc.def.ghi")
     assert mask_secrets("valor cru X9y8z7w6", ["X9y8z7w6"]).count("***") == 1
+
+
+def test_mask_secrets_aws_keys():
+    # AWS_* env vars (leading '_' defeats the generic \b rule -> dedicated AWS pattern)
+    assert "AKIAEXAMPLE123" not in mask_secrets("AWS_ACCESS_KEY_ID=AKIAEXAMPLE123")
+    assert "topsecret/val+" not in mask_secrets("AWS_SECRET_ACCESS_KEY=topsecret/val+")
+    assert "FQoGZlong" not in mask_secrets("AWS_SESSION_TOKEN=FQoGZlong")
+    # spark hadoop s3a confs use '.' separators
+    masked = mask_secrets("--conf spark.hadoop.fs.s3a.secret.key=abc123secret")
+    assert "abc123secret" not in masked and "***" in masked
+    # exact decrypted values are still redacted regardless of shape
+    assert "rawS3Secret9" not in mask_secrets("... rawS3Secret9 ...", ["rawS3Secret9"])
+
+
+def test_s3_sanitize_prefix_blocks_traversal():
+    assert s3_service.sanitize_prefix("bronze/vendas") == "bronze/vendas"
+    assert s3_service.sanitize_prefix(None) == ""
+    for bad in ("../etc", "a/../b", "/absolute", "s3://bucket/x", "\\windows"):
+        with pytest.raises(ValueError):
+            s3_service.sanitize_prefix(bad)
+
+
+def _fake_s3_conn(auth_mode="access_key", *, with_keys=True, endpoint="http://minio:9000"):
+    return SimpleNamespace(
+        name="datalake_test",
+        connection_type="s3",
+        active=True,
+        extra_params={
+            "aws_region": "us-east-1",
+            "bucket_name": "t2c-lake",
+            "base_prefix": "bronze",
+            "default_layer": "bronze",
+            "auth_mode": auth_mode,
+            "endpoint_url": endpoint,
+            "ssl_enabled": False,
+        },
+        aws_access_key_id_encrypted=encrypt_secret("AKIATESTKEY") if with_keys else None,
+        aws_secret_access_key_encrypted=encrypt_secret("shh-secret-val") if with_keys else None,
+        aws_session_token_encrypted=None,
+    )
+
+
+def test_worker_inject_s3_env_and_confs_no_secret_leak():
+    result = ResolvedConnections()
+    _inject_s3(result, "TARGET_", _fake_s3_conn(), test=False)
+    # role-prefixed non-secret env
+    assert result.env["TARGET_TYPE"] == "s3"
+    assert result.env["TARGET_S3_BUCKET"] == "t2c-lake"
+    assert result.env["TARGET_S3_REGION"] == "us-east-1"
+    # standard AWS creds via env (for boto3 + S3A default chain)
+    assert result.env["AWS_ACCESS_KEY_ID"] == "AKIATESTKEY"
+    assert result.env["AWS_SECRET_ACCESS_KEY"] == "shh-secret-val"
+    # secrets tracked for masking, and NOT present in the human-safe notes or in --conf
+    assert "AKIATESTKEY" in result.secret_values and "shh-secret-val" in result.secret_values
+    joined_confs = " ".join(result.spark_confs)
+    joined_notes = " ".join(result.notes)
+    assert "shh-secret-val" not in joined_confs and "shh-secret-val" not in joined_notes
+    assert "AKIATESTKEY" not in joined_confs and "AKIATESTKEY" not in joined_notes
+    # non-secret s3a confs present (endpoint/path-style/ssl/region)
+    assert any("fs.s3a.endpoint=http://minio:9000" in c for c in result.spark_confs)
+    assert any("fs.s3a.path.style.access=true" in c for c in result.spark_confs)
+    assert any("fs.s3a.connection.ssl.enabled=false" in c for c in result.spark_confs)
+
+
+def test_worker_inject_s3_instance_profile_no_keys():
+    result = ResolvedConnections()
+    _inject_s3(result, "SOURCE_", _fake_s3_conn(auth_mode="instance_profile", with_keys=False), test=False)
+    # no static credentials injected — rely on the instance/pod profile chain
+    assert "AWS_ACCESS_KEY_ID" not in result.env
+    assert result.secret_values == []
+    assert result.env["SOURCE_S3_BUCKET"] == "t2c-lake"
 
 
 @pytest.mark.parametrize("ip,internal", [
@@ -53,3 +128,14 @@ def test_rbac_resolution():
     for p in (perms.INGEST_RUN, perms.INGEST_JOBS_CREATE, perms.INGEST_CONNECTIONS_WRITE,
               perms.INGEST_RUNTIME_BUILD, perms.INGEST_ALERTS_MANAGE):
         assert p not in viewer
+
+
+def test_rbac_s3_permissions():
+    admin = perms.resolve_ingest_permissions({"admin"}, has_access=False)
+    viewer = perms.resolve_ingest_permissions({"viewer"}, has_access=True)
+    # S3 read + list are read-only friendly; write is admin-only (mutating).
+    for p in (perms.INGEST_S3_READ, perms.INGEST_S3_LIST, perms.INGEST_S3_WRITE):
+        assert p in admin
+    assert perms.INGEST_S3_READ in viewer
+    assert perms.INGEST_S3_LIST in viewer
+    assert perms.INGEST_S3_WRITE not in viewer
