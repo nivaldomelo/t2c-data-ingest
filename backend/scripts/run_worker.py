@@ -172,14 +172,19 @@ def _run_one(db, execution: Execution) -> None:
     seq = _log(db, execution.id, seq, "INFO", f"$ {_redact(cmd)}")
     started = time.monotonic()
     try:
-        # Env precedence: process env <- job.env_vars <- resolved connection creds.
+        # Env precedence: process env <- variables <- job.env_vars <- resolved connection creds.
+        from t2c_ingest.features.variables.service import resolve_runtime_variables
+
+        var_items = resolve_runtime_variables(db, job.id)
         env = {**_os_environ()}
+        env.update({k: v for k, v, _ in var_items})  # reusable variables (lowest precedence)
         env.update({k: str(v) for k, v in (job.env_vars or {}).items()})
         env.update(connection_env)  # SOURCE_*/TARGET_* (includes decrypted passwords)
-        # Exact secret values to redact from captured output (the decrypted connection creds).
+        # Exact secret values to redact from captured output (connection creds + secret vars).
         from t2c_ingest.core.log_masking import mask_secrets
 
         secret_values = [v for k, v in connection_env.items() if "PASSWORD" in k.upper() and v]
+        secret_values += [v for _, v, is_secret in var_items if is_secret and v]
         stdout, stderr, returncode, outcome = _run_subprocess(db, execution, cmd, env, job)
         stdout = mask_secrets(stdout, secret_values)
         stderr = mask_secrets(stderr, secret_values)
@@ -224,7 +229,9 @@ def _run_subprocess(db, execution: Execution, cmd: list[str], env: dict, job: Jo
     """Run the job as a child process group, refreshing the lease and honoring cancellation and
     timeout while it runs. Returns (stdout, stderr, returncode, outcome) where outcome is one of
     'done' | 'cancelled' | 'timeout'. Output goes to temp files to avoid pipe-buffer deadlock."""
-    timeout_s = job.timeout_seconds or None
+    # Per-step timeout (from a pipeline step) overrides the job's default when present.
+    step_timeout = (execution.parameters or {}).get("_timeout_seconds")
+    timeout_s = int(step_timeout) if step_timeout else (job.timeout_seconds or None)
     hb = max(3, int(settings.worker_heartbeat_seconds or 20))
     started = time.monotonic()
     outcome = "done"
