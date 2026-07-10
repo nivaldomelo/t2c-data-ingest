@@ -11,6 +11,7 @@ from t2c_ingest.core.db import get_db
 from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
 from t2c_ingest.features.auth_bridge import permissions as perms
+from t2c_ingest.features.connections import s3_service
 from t2c_ingest.features.connections.service import test_connection
 from t2c_ingest.models.connection import DEFAULT_PORTS, Connection
 from t2c_ingest.schemas.connection import (
@@ -19,6 +20,8 @@ from t2c_ingest.schemas.connection import (
     ConnectionSummary,
     ConnectionTestResult,
     ConnectionUpdate,
+    S3ObjectsOut,
+    S3TestResult,
 )
 from t2c_ingest.services.audit import record_audit
 
@@ -191,7 +194,11 @@ def test(
     conn = db.get(Connection, connection_id)
     if not conn:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conexão não encontrada")
-    ok, message = test_connection(conn)
+    if conn.connection_type == "s3":
+        result = s3_service.test_connection(conn)
+        ok, message = result["success"], result["message"]
+    else:
+        ok, message = test_connection(conn)
     now = datetime.now(timezone.utc)
     conn.last_test_status = "success" if ok else "failed"
     conn.last_test_message = message
@@ -212,3 +219,73 @@ def test(
              message=f"Teste da conexão '{conn.name}' ({conn.connection_type}) falhou: {message}"[:1000])
     db.commit()
     return ConnectionTestResult(status=conn.last_test_status, message=message, tested_at=now)
+
+
+# ── S3 / Data Lake object access via a connection ──
+def _require_s3(db: Session, connection_id: int) -> Connection:
+    conn = db.get(Connection, connection_id)
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conexão não encontrada")
+    if conn.connection_type != "s3":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Conexão não é do tipo S3.")
+    return conn
+
+
+@router.get("/{connection_id}/s3/objects", response_model=S3ObjectsOut)
+def s3_objects(
+    connection_id: int,
+    prefix: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_S3_LIST)),
+) -> S3ObjectsOut:
+    conn = _require_s3(db, connection_id)
+    try:
+        return S3ObjectsOut(**s3_service.list_objects(conn, prefix=prefix, limit=limit))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Falha ao listar objetos: {type(exc).__name__}") from exc
+
+
+@router.get("/{connection_id}/s3/prefixes", response_model=S3ObjectsOut)
+def s3_prefixes(
+    connection_id: int,
+    prefix: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_S3_LIST)),
+) -> S3ObjectsOut:
+    conn = _require_s3(db, connection_id)
+    try:
+        return S3ObjectsOut(**s3_service.list_objects(conn, prefix=prefix, limit=200))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Falha ao listar prefixos: {type(exc).__name__}") from exc
+
+
+@router.post("/{connection_id}/s3/test-read", response_model=S3TestResult)
+def s3_test_read(
+    connection_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_S3_READ)),
+) -> S3TestResult:
+    conn = _require_s3(db, connection_id)
+    return S3TestResult(**s3_service.test_connection(conn, attempt_write=False))
+
+
+@router.post("/{connection_id}/s3/test-write", response_model=S3TestResult)
+def s3_test_write(
+    connection_id: int,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_S3_WRITE)),
+) -> S3TestResult:
+    conn = _require_s3(db, connection_id)
+    if not conn.can_write:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Conexão S3 não tem escrita habilitada.")
+    result = s3_service.test_connection(conn, attempt_write=True)
+    record_audit(db, action="S3_TEST_WRITE_SUCCEEDED" if result["success"] else "S3_TEST_WRITE_FAILED",
+                 user=user, entity_type="connection", entity_id=conn.id,
+                 detail={"can_write": result["details"].get("can_write")})
+    db.commit()
+    return S3TestResult(**result)
