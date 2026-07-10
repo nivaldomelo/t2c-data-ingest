@@ -190,6 +190,10 @@ class Settings(BaseSettings):
     spark_python_version: str = Field(default="3.10", validation_alias="SPARK_PYTHON_VERSION")
     spark_java_version: str = Field(default="17", validation_alias="SPARK_JAVA_VERSION")
     spark_scala_version: str = Field(default="2.13", validation_alias="SPARK_SCALA_VERSION")
+    # Bounded JVM heaps for the container submit (the driver runs inside a Spark worker on a
+    # small shared Docker VM; unbounded Java 17 heaps OOM the host). Tune up in real clusters.
+    spark_driver_memory: str = Field(default="512m", validation_alias="SPARK_DRIVER_MEMORY")
+    spark_executor_memory: str = Field(default="512m", validation_alias="SPARK_EXECUTOR_MEMORY")
     spark_expected_workers: int = Field(default=3, validation_alias="SPARK_EXPECTED_WORKERS")
     # Applying an active image to the local cluster: retag to this tag (used by the worker
     # services in docker-compose) and recreate these containers with the new image.

@@ -128,9 +128,11 @@ def _container_spark_command(job: JobDefinition, args: list[str], env_keys: list
     parts = [
         "/opt/spark/bin/spark-submit",
         "--master", shlex.quote(settings.spark_master_url),
+        "--driver-memory", shlex.quote(settings.spark_driver_memory),
         "--conf", "spark.driver.host=$(hostname)",
         "--conf", "spark.pyspark.python=/usr/bin/python3",
         "--conf", "spark.pyspark.driver.python=/usr/bin/python3",
+        "--conf", f"spark.executor.memory={shlex.quote(settings.spark_executor_memory)}",
         "--conf", "spark.executor.cores=1",
         "--conf", "spark.deploy.spreadOut=true",
         "--conf", "spark.driver.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
