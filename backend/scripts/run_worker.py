@@ -516,6 +516,12 @@ def _run_orchestration() -> bool:
                 ran = True
             _reap_stale_executions()  # recover orphaned runs
             _maybe_run_retention()    # prune old rows (interval-guarded)
+            try:
+                from t2c_ingest.features.alerts.monitors import check_schedule_overdue
+
+                check_schedule_overdue(lockdb)   # alert if a schedule is overdue (scheduler stuck)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[worker] overdue monitor error: {exc}")
         finally:
             lockdb.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _ORCH_LOCK_KEY})
     return ran
@@ -529,6 +535,15 @@ def main() -> None:
     print(f"[worker] started ({_WORKER_ID}); polling every {poll}s; spark master={settings.spark_master_url}")
     while True:
         ran = False
+        # Liveness heartbeat (each tick, outside the orchestration lock) so the scheduler can
+        # detect this worker dying even when another replica holds the orchestration lock.
+        try:
+            from t2c_ingest.features.alerts.monitors import heartbeat_worker
+
+            with SessionLocal() as hb:
+                heartbeat_worker(hb, _WORKER_ID)
+        except Exception:  # noqa: BLE001
+            pass
         # Job execution: concurrent across replicas (each row claimed once via SKIP LOCKED).
         with SessionLocal() as db:
             execution = _claim_next(db)

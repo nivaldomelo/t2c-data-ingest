@@ -6,9 +6,11 @@ worker) POSTs them and records the result. Delivery is best-effort and never bre
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import smtplib
+from datetime import datetime, timedelta, timezone
+from email.mime.text import MIMEText
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from t2c_ingest.core.config import settings
@@ -96,41 +98,87 @@ def build_payload(channel_type: str, notif: AlertNotification) -> dict:
     }
 
 
+def _send_email(target: str, notif: AlertNotification) -> None:
+    """Send an email notification via SMTP. Raises on failure (caught by send_one)."""
+    if not settings.smtp_host:
+        raise RuntimeError("SMTP não configurado (defina SMTP_HOST).")
+    recipients = [r.strip() for r in target.replace(";", ",").split(",") if r.strip()]
+    if not recipients:
+        raise RuntimeError("Canal de e-mail sem destinatário.")
+    link = _link(notif)
+    body = f"{notif.title}\n\n{notif.message or ''}\n\nEvento: {notif.event_type} · Severidade: {notif.severity.upper()}"
+    if link:
+        body += f"\n\n{link}"
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = f"[T2C Data Ingest · {notif.severity.upper()}] {notif.title}"
+    msg["From"] = settings.smtp_from or settings.smtp_user or "t2c-data-ingest@localhost"
+    msg["To"] = ", ".join(recipients)
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as smtp:
+        if settings.smtp_use_tls:
+            smtp.starttls()
+        if settings.smtp_user:
+            smtp.login(settings.smtp_user, settings.smtp_password)
+        smtp.sendmail(msg["From"], recipients, msg.as_string())
+
+
 def send_one(db: Session, notif: AlertNotification, channel: AlertChannel) -> None:
-    """POST a single notification to its channel and record the outcome."""
+    """Deliver a single notification to its channel and record the outcome."""
     notif.attempts += 1
     try:
-        url = decrypt_secret(channel.target_url_encrypted)
-        payload = json.dumps(build_payload(channel.channel_type, notif)).encode()
-        # SSRF-safe POST: validates + PINS the connection to a public IP (no DNS-rebinding),
-        # does not follow redirects.
-        code = safe_post(
-            url, payload, {"Content-Type": "application/json"}, timeout=10,
-            allow_internal=settings.alerts_allow_internal_targets,
-        )
-        notif.http_status = code
-        notif.status = "sent" if 200 <= code < 300 else "failed"
-        notif.error = None if notif.status == "sent" else f"HTTP {code}"
+        target = decrypt_secret(channel.target_url_encrypted)
+        if channel.channel_type == "email":
+            _send_email(target, notif)
+            notif.http_status = None
+            notif.status = "sent"
+            notif.error = None
+        else:
+            payload = json.dumps(build_payload(channel.channel_type, notif)).encode()
+            # SSRF-safe POST: validates + PINS the connection to a public IP (no DNS-rebinding).
+            code = safe_post(
+                target, payload, {"Content-Type": "application/json"}, timeout=10,
+                allow_internal=settings.alerts_allow_internal_targets,
+            )
+            notif.http_status = code
+            notif.status = "sent" if 200 <= code < 300 else "failed"
+            notif.error = None if notif.status == "sent" else f"HTTP {code}"
     except Exception as exc:  # noqa: BLE001
         notif.status = "failed"
         notif.error = str(exc)[:500]
+    # After exhausting retries, mark 'dead' so it stops being retried and is visible.
+    if notif.status == "failed" and notif.attempts >= settings.alert_max_attempts:
+        notif.status = "dead"
     notif.sent_at = _now()
 
 
+def _retry_due(notif: AlertNotification, now: datetime) -> bool:
+    """A failed notification is due for retry after an exponential backoff since last attempt."""
+    if notif.status != "failed" or notif.attempts >= settings.alert_max_attempts:
+        return False
+    if not notif.sent_at:
+        return True
+    backoff = settings.alert_retry_base_seconds * (2 ** max(0, notif.attempts - 1))
+    return notif.sent_at + timedelta(seconds=min(backoff, 3600)) <= now
+
+
 def dispatch_pending(db: Session, limit: int = 20) -> int:
-    """Send queued notifications (called each worker tick). Returns how many were processed."""
-    pending = db.scalars(
-        select(AlertNotification).where(AlertNotification.status == "pending").order_by(AlertNotification.id).limit(limit)
+    """Send pending notifications and retry due failed ones (exponential backoff). Returns count."""
+    now = _now()
+    candidates = db.scalars(
+        select(AlertNotification)
+        .where(or_(AlertNotification.status == "pending", AlertNotification.status == "failed"))
+        .order_by(AlertNotification.id)
+        .limit(limit * 3)
     ).all()
-    if not pending:
+    to_send = [n for n in candidates if n.status == "pending" or _retry_due(n, now)][:limit]
+    if not to_send:
         return 0
     channels = {c.id: c for c in db.scalars(select(AlertChannel)).all()}
-    for notif in pending:
+    for notif in to_send:
         ch = channels.get(notif.channel_id)
         if not ch:
-            notif.status = "failed"
+            notif.status = "dead"
             notif.error = "Canal removido."
             continue
         send_one(db, notif, ch)
     db.commit()
-    return len(pending)
+    return len(to_send)

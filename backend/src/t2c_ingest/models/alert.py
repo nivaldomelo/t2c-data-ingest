@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from t2c_ingest.models.base import Base
 
 # teams | slack | webhook
-CHANNEL_TYPES = ("teams", "slack", "webhook")
+CHANNEL_TYPES = ("teams", "slack", "webhook", "email")
 SEVERITIES = ("info", "warning", "critical")
 SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
 # Event types the platform can raise (a subset is wired to real triggers today).

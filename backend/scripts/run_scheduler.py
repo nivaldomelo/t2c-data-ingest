@@ -151,6 +151,14 @@ def main() -> None:
         fired = 0
         while fired < MAX_FIRES_PER_TICK and _fire_one():
             fired += 1
+        # Detect a dead worker (no recent heartbeat) and alert.
+        try:
+            from t2c_ingest.features.alerts.monitors import check_worker_down
+
+            with SessionLocal() as db:
+                check_worker_down(db)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[scheduler] worker-down monitor error: {exc}")
         time.sleep(poll)
 
 

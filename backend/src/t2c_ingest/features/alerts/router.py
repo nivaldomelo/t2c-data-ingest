@@ -29,6 +29,15 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 def _mask(url: str) -> str:
     try:
+        if url and "@" in url and "://" not in url:  # email recipient list
+            parts = []
+            for r in url.replace(";", ",").split(","):
+                r = r.strip()
+                if not r or "@" not in r:
+                    continue
+                local, _, domain = r.partition("@")
+                parts.append(f"{local[:1]}***@{domain}")
+            return ", ".join(parts) or "configurado"
         p = urlparse(url)
         host = p.hostname or ""
         return f"{p.scheme}://{host}/…" if host else "configurado"
@@ -53,10 +62,15 @@ def _validate(channel_type: str | None, severity: str | None) -> None:
         raise HTTPException(422, f"Severidade inválida. Use: {', '.join(SEVERITIES)}.")
 
 
-def _validate_url(url: str) -> None:
-    """SSRF guard on the webhook URL (rejects internal/metadata targets)."""
+def _validate_target(channel_type: str | None, target: str) -> None:
+    """Validate the channel target: SSRF-guarded URL for webhooks; recipient list for email."""
+    if channel_type == "email":
+        recipients = [r.strip() for r in (target or "").replace(";", ",").split(",") if r.strip()]
+        if not recipients or not all("@" in r and "." in r.split("@")[-1] for r in recipients):
+            raise HTTPException(422, "Informe um ou mais e-mails de destinatário válidos.")
+        return
     try:
-        assert_public_http_url(url or "", allow_internal=settings.alerts_allow_internal_targets)
+        assert_public_http_url(target or "", allow_internal=settings.alerts_allow_internal_targets)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -71,7 +85,7 @@ def list_channels(db: Session = Depends(get_db), _: CurrentUser = Depends(requir
 @router.post("/channels", response_model=ChannelOut, status_code=status.HTTP_201_CREATED)
 def create_channel(payload: ChannelCreate, db: Session = Depends(get_db), user: CurrentUser = Depends(require_permission(perms.INGEST_ALERTS_MANAGE))) -> ChannelOut:
     _validate(payload.channel_type, payload.min_severity)
-    _validate_url(payload.target_url)
+    _validate_target(payload.channel_type, payload.target_url)
     ch = AlertChannel(
         name=payload.name.strip(), channel_type=payload.channel_type,
         target_url_encrypted=encrypt_secret(payload.target_url.strip()),
@@ -95,7 +109,7 @@ def update_channel(channel_id: int, payload: ChannelUpdate, db: Session = Depend
     _validate(payload.channel_type, payload.min_severity)
     data = payload.model_dump(exclude_unset=True)
     if "target_url" in data and data["target_url"]:
-        _validate_url(data["target_url"])
+        _validate_target(payload.channel_type or ch.channel_type, data["target_url"])
         ch.target_url_encrypted = encrypt_secret(data.pop("target_url").strip())
     else:
         data.pop("target_url", None)

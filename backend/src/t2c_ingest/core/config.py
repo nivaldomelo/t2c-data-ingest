@@ -134,6 +134,19 @@ class Settings(BaseSettings):
     alerts_allow_internal_targets: bool = Field(
         default=False, validation_alias="ALERTS_ALLOW_INTERNAL_TARGETS"
     )
+    # Alert delivery retry: attempts with exponential backoff before a notification goes 'dead'.
+    alert_max_attempts: int = Field(default=5, validation_alias="ALERT_MAX_ATTEMPTS")
+    alert_retry_base_seconds: int = Field(default=30, validation_alias="ALERT_RETRY_BASE_SECONDS")
+    # Silent-failure monitors.
+    schedule_overdue_grace_seconds: int = Field(default=300, validation_alias="SCHEDULE_OVERDUE_GRACE_SECONDS")
+    worker_down_threshold_seconds: int = Field(default=180, validation_alias="WORKER_DOWN_THRESHOLD_SECONDS")
+    # E-mail alert channel (SMTP). Empty host disables email delivery.
+    smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_user: str = Field(default="", validation_alias="SMTP_USER")
+    smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", validation_alias="SMTP_FROM")
+    smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
     # Direct-mode login: by default users with MFA enabled must authenticate via proxy mode
     # (which performs the full MFA challenge). Set true to allow the legacy dev bypass.
     auth_allow_mfa_bypass: bool = Field(default=False, validation_alias="AUTH_ALLOW_MFA_BYPASS")

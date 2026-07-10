@@ -168,7 +168,7 @@ function ChannelModal({ mode, channel, onClose }: { mode: "create" | "edit"; cha
   function submit() {
     setError(null);
     if (!name.trim()) return setError("Informe o nome do canal.");
-    if (mode === "create" && !url.trim()) return setError("Informe a URL do webhook.");
+    if (mode === "create" && !url.trim()) return setError(type === "email" ? "Informe o(s) e-mail(s) destinatário(s)." : "Informe a URL do webhook.");
     save.mutate();
   }
 
@@ -181,12 +181,12 @@ function ChannelModal({ mode, channel, onClose }: { mode: "create" | "edit"; cha
       <div className="space-y-4">
         <div><label className={labelCls}>Nome *</label><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="ex.: Time de Dados — Teams" /></div>
         <div className="grid grid-cols-2 gap-4">
-          <div><label className={labelCls}>Tipo</label><select className={inputCls} value={type} onChange={(e) => setType(e.target.value)}><option value="webhook">Webhook genérico</option><option value="teams">Microsoft Teams</option><option value="slack">Slack</option></select></div>
+          <div><label className={labelCls}>Tipo</label><select className={inputCls} value={type} onChange={(e) => setType(e.target.value)}><option value="webhook">Webhook genérico</option><option value="teams">Microsoft Teams</option><option value="slack">Slack</option><option value="email">E-mail</option></select></div>
           <div><label className={labelCls}>Severidade mínima</label><select className={inputCls} value={minSev} onChange={(e) => setMinSev(e.target.value)}>{SEV.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
         </div>
         <div>
-          <label className={labelCls}>URL do webhook {mode === "edit" && <span className="text-gray-400">(deixe vazio para manter)</span>}</label>
-          <input className={`${inputCls} font-mono text-xs`} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
+          <label className={labelCls}>{type === "email" ? "E-mail(s) destinatário(s)" : "URL do webhook"} {mode === "edit" && <span className="text-gray-400">(deixe vazio para manter)</span>}</label>
+          <input className={`${inputCls} font-mono text-xs`} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={type === "email" ? "ops@empresa.com, oncall@empresa.com" : "https://…"} />
         </div>
         <div>
           <label className={labelCls}>Eventos (vazio = todos)</label>
