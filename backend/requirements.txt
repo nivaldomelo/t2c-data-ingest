@@ -12,3 +12,6 @@ cryptography>=42
 pymysql>=1.1.1
 croniter>=3.0.0
 python-multipart>=0.0.20
+
+# AWS SDK for S3 / Data Lake connections
+boto3>=1.35.0

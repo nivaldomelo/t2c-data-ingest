@@ -19,6 +19,9 @@ class ConnectionBase(BaseModel):
     extra_params: dict | None = None
     ssl_enabled: bool = False
     active: bool = True
+    # Usable as source (read) and/or destination (write).
+    can_read: bool = True
+    can_write: bool = False
 
     @field_validator("connection_type")
     @classmethod
@@ -31,6 +34,10 @@ class ConnectionBase(BaseModel):
 class ConnectionCreate(ConnectionBase):
     # Password is write-only; optional so a connection can be created and filled later.
     password: str | None = None
+    # S3 (access_key mode) credentials — write-only, encrypted at rest, never returned.
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_session_token: str | None = None
 
 
 class ConnectionUpdate(BaseModel):
@@ -47,6 +54,12 @@ class ConnectionUpdate(BaseModel):
     extra_params: dict | None = None
     ssl_enabled: bool | None = None
     active: bool | None = None
+    can_read: bool | None = None
+    can_write: bool | None = None
+    # Empty/omitted AWS secret keeps the currently stored one.
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_session_token: str | None = None
 
     @field_validator("connection_type")
     @classmethod
@@ -57,12 +70,15 @@ class ConnectionUpdate(BaseModel):
 
 
 class ConnectionOut(ConnectionBase):
-    """Public representation — never includes the password, only whether one is stored."""
+    """Public representation — never includes any secret, only whether one is stored."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     has_password: bool = False
+    has_aws_access_key: bool = False
+    has_aws_secret_key: bool = False
+    has_aws_session_token: bool = False
     last_test_status: str
     last_test_message: str | None = None
     last_tested_at: datetime | None = None
@@ -82,5 +98,25 @@ class ConnectionSummary(BaseModel):
     total: int
     postgres: int
     mysql: int
+    s3: int = 0
     test_success: int
     test_failed: int
+
+
+class S3ObjectItem(BaseModel):
+    key: str
+    size: int | None = None
+    last_modified: datetime | None = None
+    storage_class: str | None = None
+
+
+class S3ObjectsOut(BaseModel):
+    bucket: str | None = None
+    prefix: str | None = None
+    items: list[S3ObjectItem] = []
+
+
+class S3TestResult(BaseModel):
+    success: bool
+    message: str
+    details: dict = {}

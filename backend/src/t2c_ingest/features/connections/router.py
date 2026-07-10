@@ -28,7 +28,26 @@ router = APIRouter(prefix="/connections", tags=["connections"])
 def _to_out(conn: Connection) -> ConnectionOut:
     out = ConnectionOut.model_validate(conn)
     out.has_password = bool(conn.password_encrypted)
+    out.has_aws_access_key = bool(conn.aws_access_key_id_encrypted)
+    out.has_aws_secret_key = bool(conn.aws_secret_access_key_encrypted)
+    out.has_aws_session_token = bool(conn.aws_session_token_encrypted)
     return out
+
+
+# Map write-only AWS secret fields (create/update payload) -> encrypted columns on the model.
+_AWS_SECRET_FIELDS = {
+    "aws_access_key_id": "aws_access_key_id_encrypted",
+    "aws_secret_access_key": "aws_secret_access_key_encrypted",
+    "aws_session_token": "aws_session_token_encrypted",
+}
+
+
+def _apply_aws_secrets(conn: Connection, payload) -> None:
+    """Encrypt+store any provided AWS secret; empty/omitted keeps the current value."""
+    for field, column in _AWS_SECRET_FIELDS.items():
+        value = getattr(payload, field, None)
+        if value:
+            setattr(conn, column, encrypt_secret(value))
 
 
 @router.get("/summary", response_model=ConnectionSummary)
@@ -46,6 +65,7 @@ def summary(
         total=_count(),
         postgres=_count(Connection.connection_type == "postgres"),
         mysql=_count(Connection.connection_type == "mysql"),
+        s3=_count(Connection.connection_type == "s3"),
         test_success=_count(Connection.last_test_status == "success"),
         test_failed=_count(Connection.last_test_status == "failed"),
     )
@@ -97,12 +117,13 @@ def create_connection(
 ) -> ConnectionOut:
     if db.scalar(select(Connection).where(Connection.name == payload.name)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Já existe uma conexão com esse nome")
-    data = payload.model_dump(exclude={"password"})
+    data = payload.model_dump(exclude={"password", *_AWS_SECRET_FIELDS})
     if data.get("port") is None:
         data["port"] = DEFAULT_PORTS.get(payload.connection_type)
     conn = Connection(**data, created_by=user.email, updated_by=user.email)
     if payload.password:
         conn.password_encrypted = encrypt_secret(payload.password)
+    _apply_aws_secrets(conn, payload)
     db.add(conn)
     db.flush()
     record_audit(db, action="ingest.connection.created", user=user, entity_type="connection", entity_id=conn.id)
@@ -133,12 +154,13 @@ def update_connection(
     conn = db.get(Connection, connection_id)
     if not conn:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conexão não encontrada")
-    data = payload.model_dump(exclude_unset=True, exclude={"password"})
+    data = payload.model_dump(exclude_unset=True, exclude={"password", *_AWS_SECRET_FIELDS})
     for key, value in data.items():
         setattr(conn, key, value)
-    # Empty/omitted password keeps the current one; a non-empty value replaces it.
+    # Empty/omitted secrets keep the current ones; non-empty values replace them.
     if payload.password:
         conn.password_encrypted = encrypt_secret(payload.password)
+    _apply_aws_secrets(conn, payload)
     conn.updated_by = user.email
     record_audit(db, action="ingest.connection.updated", user=user, entity_type="connection", entity_id=conn.id)
     db.commit()
