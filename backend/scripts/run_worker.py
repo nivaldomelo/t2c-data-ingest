@@ -90,9 +90,12 @@ def _jdbc_jar_args() -> list[str]:
     return []
 
 
-def _build_command(job: JobDefinition) -> list[str]:
+def _build_command(job: JobDefinition, env_keys: list[str] | None = None) -> list[str]:
     args = [str(a) for a in (job.arguments or [])]
     if job.type in {"spark_python", "spark_submit"}:
+        container = settings.runtime_spark_submit_container
+        if container and settings.spark_submit_via_container:
+            return _container_spark_command(job, args, env_keys or [], container)
         cmd = ["spark-submit", "--master", settings.spark_master_url]
         # Driver host/bind for standalone client mode. Spark rejects hostnames with '_'
         # ("Invalid Spark URL"), so we advertise a DNS-valid name (the compose service).
@@ -114,6 +117,31 @@ def _build_command(job: JobDefinition) -> list[str]:
         return cmd + args
     # plain python
     return ["python", job.script_path or ""] + args
+
+
+def _container_spark_command(job: JobDefinition, args: list[str], env_keys: list[str], container: str) -> list[str]:
+    """spark-submit INSIDE a Spark container (via docker exec) so the driver's Python matches the
+    executors. JDBC jars are baked into the image (/opt/spark/jars). Env (incl. secrets) is passed
+    with `docker exec -e KEY` (read from the worker's process env — never on the command line)."""
+    import shlex
+
+    parts = [
+        "/opt/spark/bin/spark-submit",
+        "--master", shlex.quote(settings.spark_master_url),
+        "--conf", "spark.driver.host=$(hostname)",
+        "--conf", "spark.executor.cores=1",
+        "--conf", "spark.deploy.spreadOut=true",
+        "--conf", "spark.driver.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
+        "--conf", "spark.executor.extraJavaOptions=-Djava.net.preferIPv4Stack=true",
+    ]
+    if job.type == "spark_submit" and job.main_class:
+        parts += ["--class", shlex.quote(job.main_class)]
+    parts += [shlex.quote(job.script_path or "")] + [shlex.quote(a) for a in args]
+    submit = " ".join(parts)
+    exec_env = []
+    for k in env_keys:
+        exec_env += ["-e", k]  # pass value through from our env; keeps secrets off the cmdline
+    return ["docker", "exec", *exec_env, container, "bash", "-lc", submit]
 
 
 def _redact(cmd: list[str]) -> str:
@@ -168,8 +196,6 @@ def _run_one(db, execution: Execution) -> None:
         db.commit()
         return
 
-    cmd = _build_command(job)
-    seq = _log(db, execution.id, seq, "INFO", f"$ {_redact(cmd)}")
     started = time.monotonic()
     try:
         # Env precedence: process env <- variables <- job.env_vars <- resolved connection creds.
@@ -180,6 +206,9 @@ def _run_one(db, execution: Execution) -> None:
         env.update({k: v for k, v, _ in var_items})  # reusable variables (lowest precedence)
         env.update({k: str(v) for k, v in (job.env_vars or {}).items()})
         env.update(connection_env)  # SOURCE_*/TARGET_* (includes decrypted passwords)
+        # Build the command AFTER env so a container submit can pass env keys via docker exec -e.
+        cmd = _build_command(job, list(env.keys()))
+        seq = _log(db, execution.id, seq, "INFO", f"$ {_redact(cmd)}")
         # Exact secret values to redact from captured output (connection creds + secret vars).
         from t2c_ingest.core.log_masking import mask_secrets
 

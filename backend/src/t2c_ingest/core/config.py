@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     # A running Spark container the worker uses (via `docker exec`) to spark-submit validations,
     # so the driver Python matches the executors (the runtime image). Empty disables docker exec.
     runtime_spark_submit_container: str = Field(default="", validation_alias="RUNTIME_SPARK_SUBMIT_CONTAINER")
+    # Submit real Spark jobs via `docker exec` into a Spark container so the DRIVER's Python
+    # matches the EXECUTORS' (both the runtime image). Fixes the driver/executor version mismatch
+    # (UDFs/pandas). Requires runtime_spark_submit_container. Off -> submit from the worker.
+    spark_submit_via_container: bool = Field(default=True, validation_alias="SPARK_SUBMIT_VIA_CONTAINER")
     spark_expected_workers: int = Field(default=3, validation_alias="SPARK_EXPECTED_WORKERS")
     # Applying an active image to the local cluster: retag to this tag (used by the worker
     # services in docker-compose) and recreate these containers with the new image.

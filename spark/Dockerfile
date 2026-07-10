@@ -23,6 +23,11 @@ RUN set -eux; \
 
 COPY conf/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
+# Python DB drivers used by the DRIVER side of jobs (e.g. reading the control table via psycopg,
+# MySQL upsert via pymysql). Baked here so the driver — which runs INSIDE a Spark container when
+# submitting via docker exec — has the same libs as the executors. Versions are py3.8-compatible.
+RUN python3 -m pip install --no-cache-dir "psycopg[binary]>=3.1,<3.2" "pymysql>=1.1,<1.2"
+
 RUN mkdir -p /tmp/spark-local /tmp/spark-events && chown -R 185:185 /tmp/spark-local /tmp/spark-events
 
 USER 185
