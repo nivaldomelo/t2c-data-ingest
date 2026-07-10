@@ -13,7 +13,7 @@ const LANG_LABEL: Record<string, string> = {
   text: "Texto",
 };
 
-export function CopyCodeButton({ content }: { content: string }) {
+export function CopyCodeButton({ content, label = "Copiar código" }: { content: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -30,7 +30,7 @@ export function CopyCodeButton({ content }: { content: string }) {
       className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
     >
       {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-      {copied ? "Copiado" : "Copiar código"}
+      {copied ? "Copiado" : label}
     </button>
   );
 }

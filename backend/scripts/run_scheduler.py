@@ -25,7 +25,7 @@ from t2c_ingest.features.schedules.manager import apply_next_run  # noqa: E402
 from t2c_ingest.models.job import JobDefinition  # noqa: E402
 from t2c_ingest.models.schedule import JobSchedule, ScheduleRun  # noqa: E402
 from t2c_ingest.models.audit import AuditEvent  # noqa: E402
-from t2c_ingest.services.execution_service import create_job_execution  # noqa: E402
+from t2c_ingest.services.execution_service import active_execution_count, create_job_execution  # noqa: E402
 
 MAX_FIRES_PER_TICK = 50
 
@@ -89,6 +89,13 @@ def _fire_one() -> bool:
                 run.message = "Job inexistente ou inativo."
                 sch.last_status = "failed"
                 _audit(db, "JOB_SCHEDULE_FAILED", sch, {"reason": run.message})
+            elif int(getattr(job, "max_active_runs", 0) or 0) > 0 and \
+                    active_execution_count(db, job.id) >= int(job.max_active_runs):
+                # Overlap guard: a previous run is still active and the job forbids overlap.
+                run.status = "skipped"
+                run.message = f"Ignorado: {job.max_active_runs} execução(ões) ativa(s) (sem sobreposição)."
+                sch.last_status = "skipped"
+                _audit(db, "JOB_SCHEDULE_SKIPPED", sch, {"reason": "max_active_runs"})
             else:
                 execution = create_job_execution(
                     db,
@@ -135,12 +142,23 @@ def _fire_one() -> bool:
 
 
 def main() -> None:
+    from t2c_ingest.core.bootstrap import enforce_secure_config
+
+    enforce_secure_config()  # refuse to run under insecure prod defaults
     poll = settings.scheduler_poll_interval_seconds
     print(f"[scheduler] started; tz={settings.scheduler_timezone}; polling every {poll}s")
     while True:
         fired = 0
         while fired < MAX_FIRES_PER_TICK and _fire_one():
             fired += 1
+        # Detect a dead worker (no recent heartbeat) and alert.
+        try:
+            from t2c_ingest.features.alerts.monitors import check_worker_down
+
+            with SessionLocal() as db:
+                check_worker_down(db)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[scheduler] worker-down monitor error: {exc}")
         time.sleep(poll)
 
 

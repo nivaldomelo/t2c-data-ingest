@@ -560,6 +560,101 @@ instalação, o botão *Instalar biblioteca* não aparece; sem permissão de rem
 Tabela `job_libraries` já criada para, no futuro, vincular bibliotecas obrigatórias a um job e
 validar antes de executar (não é aplicado nesta versão para não impactar execuções existentes).
 
+## Data Quality e linhagem
+
+A tela **Data Quality** (`/data-quality`, permissão `ingest:quality:read`) mostra as **validações
+de qualidade por execução**, derivadas do `INGEST_SUMMARY` que o worker emite. Ao finalizar uma
+execução de job, o worker avalia **uma linha por tabela** (jobs multi-tabela geram vários
+`INGEST_SUMMARY`) e grava em `dq_results`:
+
+- **registros_lidos** (> 0), **gravados × lidos** (FULL: iguais; incremental: gravados ≤ lidos),
+  **watermark avançou** (incremental) e **status do job** — com resultado geral `pass/warn/fail`.
+- Cards de resumo (7 dias): avaliações, ok/atenção/falha e total de registros lidos/gravados.
+
+**Linhagem no t2c_data:** para cada tabela avaliada, o ingest também escreve uma linha em
+**`t2c_data.ingest_lineage`** (schema do produto base) com job, pipeline, conexão/tipo de origem
+e destino, tabela, registros lidos/gravados, tipo de ingestão, status e horário — permitindo que o
+`t2c_data` construa linhagem/metadados a partir das execuções reais. É best-effort e nunca quebra
+a execução. Endpoints: `GET /api/v1/data-quality/{summary,results}`.
+
+## Auditoria (governança)
+
+A tela **Auditoria** (`/audit`, **somente admin** — `ingest:admin`) é a trilha de todas as ações
+críticas gravadas em `audit_events`: criação/edição/exclusão de jobs, alteração de código, runtime
+buildado/ativado, cluster validado, conexões/variáveis, backfill, watermark reset, canais de
+alerta etc. Cards de resumo (total, hoje, 7 dias, usuários), **filtros** (ação, entidade, usuário,
+busca em ação/entidade/usuário/detalhe) e **detalhe JSON** por evento (sem conteúdo de arquivos ou
+secrets). Endpoints: `GET /api/v1/audit/{summary,actions,events}`. A exclusão de jobs já faz
+**soft delete + archive de código** (ver Detalhes do Job) e o histórico de versões vive em
+`job_code_versions`.
+
+## Alertas e notificações
+
+A tela **Alertas** (`/alerts`) envia eventos importantes para **Teams**, **Slack** ou **webhooks
+genéricos**:
+
+- **Canais**: nome, tipo, URL do webhook (armazenada **criptografada** com Fernet e sempre
+  **mascarada** na API), **severidade mínima** (info/warning/critical) e **eventos** assinados
+  (vazio = todos). Ações: **Testar** (envia uma notificação de teste), editar, excluir.
+- **Histórico**: cada notificação com evento, severidade, canal, **status de entrega**
+  (`pending/sent/failed` + HTTP), erro e **Reenviar** em caso de falha.
+
+**Como dispara:** o worker cria notificações (`emit`) quando uma execução finaliza e as entrega
+(`dispatch`) a cada tick. Gatilhos ativos hoje: **JOB_FAILED** (job falhou/timeout, crítico),
+**JOB_ZERO_RECORDS** (carga com `lidos=0 gravados=0`, aviso) e **PIPELINE_FAILED** (pipeline
+falhou/parcial). O payload é adaptado por tipo (MessageCard do Teams, blocos do Slack, JSON
+genérico) e inclui **link para o detalhe** da execução. Eventos como cluster/worker/schema/runtime
+já existem no modelo e podem ser ligados a gatilhos futuros.
+
+Endpoints: `GET/POST/PATCH/DELETE /api/v1/alerts/channels[/{id}]`,
+`POST /api/v1/alerts/channels/{id}/test`, `GET /api/v1/alerts/notifications`,
+`POST /api/v1/alerts/notifications/{id}/resend`. Permissões: `ingest:alerts:read` (todos os
+papéis) e `ingest:alerts:manage` (admin/editor). Nunca expõe a URL/secret do webhook.
+
+## Dashboard operacional
+
+A tela inicial (`/`) é um **dashboard operacional** com atualização automática (10s) via
+`GET /api/v1/dashboard/operational`, para responder rápido "o que está rodando, o que falhou e o
+que está atrasado":
+
+- **KPIs**: rodando agora (jobs + pipelines), execuções hoje (ok/falha), falhas em 7 dias (jobs e
+  pipelines com erro), tempo médio, registros **lidos**/**gravados** hoje.
+- **Painéis**: Rodando agora, Falhas recentes, **Cluster Spark** (workers/cores/memória ao vivo),
+  **Schedules atrasados** (`next_run_at` no passado, minutos de atraso) e próximos, **execuções
+  por status** (7d), **cargas com zero registros** hoje, **acima do tempo normal**
+  (duração > 1,5× a média do job) e últimas execuções — cada item linka para o detalhe.
+
+Os registros (lidos/gravados/zero) vêm da linha `INGEST_SUMMARY` que o worker salva em
+`final_message` — sem varrer logs em tempo de request; agregações e o scan de execuções do dia são
+limitados (bounded) para manter a tela rápida.
+
+## Reprocessamentos (backfill)
+
+A tela **Reprocessamentos** (`/backfills`) permite reprocessar dados de forma **controlada e
+rastreável**, reutilizando a máquina de execução (as execuções nascem com `trigger_type=backfill`):
+
+- **Job** — reprocessa um job específico.
+- **Pipeline** — reexecuta o pipeline; opcionalmente **a partir de um step** (os steps anteriores
+  são marcados como reaproveitados e só o step escolhido + descendentes rodam).
+- **Grupo de controle** — reprocessa todos os jobs vinculados (via `ingestion_control_id`) às
+  tabelas de um `grupo` do Controle de Ingestão.
+- **Tabela de controle** — idem para uma tabela específica.
+
+Opções: **período** (`period_start`/`period_end`, injetados como parâmetros da execução) e
+**reset de watermark** das tabelas do controle — este exige a permissão dedicada
+`ingest:backfill:watermark` e é **auditado** (`WATERMARK_RESET`, com valor antigo/novo). Vazio =
+reprocessar do zero. Cada reprocessamento vira um `backfill_run` com status roll-up
+(`queued → running → success/partial/failed`) atualizado pelo worker conforme as execuções/pipeline
+terminam, e lista as execuções geradas.
+
+Endpoints: `GET/POST /api/v1/backfills`, `GET /api/v1/backfills/{id}`,
+`GET /api/v1/pipelines/{id}/steps`. Permissões: `ingest:backfill:run` (admin/editor/data_owner) e
+`ingest:backfill:watermark` (admin/editor). Eventos: `BACKFILL_REQUESTED/STARTED`, `WATERMARK_RESET`.
+
+> Para o reprocessamento de **grupo/tabela** disparar jobs, os jobs precisam estar vinculados à
+> linha de controle pelo campo `ingestion_control_id`. Sem vínculo, o reset de watermark é aplicado
+> mas nenhum job é enfileirado (0 alvos).
+
 ## Clusters
 
 A tela **Clusters** (`/clusters`) mostra os clusters Spark em **cards** com dados **ao vivo** do

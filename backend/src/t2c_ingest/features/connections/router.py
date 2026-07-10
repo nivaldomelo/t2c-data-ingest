@@ -182,5 +182,11 @@ def test(
         entity_id=conn.id,
         detail={"status": conn.last_test_status},
     )
+    if not ok:
+        from t2c_ingest.features.alerts.service import emit
+
+        emit(db, event_type="CONNECTION_FAILED", severity="warning",
+             title=f"Conexão falhou: {conn.name}",
+             message=f"Teste da conexão '{conn.name}' ({conn.connection_type}) falhou: {message}"[:1000])
     db.commit()
     return ConnectionTestResult(status=conn.last_test_status, message=message, tested_at=now)

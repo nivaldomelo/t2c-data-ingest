@@ -55,6 +55,14 @@ INGEST_LIBRARIES_READ = "ingest:libraries:read"
 INGEST_LIBRARIES_INSTALL = "ingest:libraries:install"
 INGEST_LIBRARIES_UNINSTALL = "ingest:libraries:uninstall"
 INGEST_LIBRARIES_MANAGE = "ingest:libraries:manage"
+# Data quality / lineage.
+INGEST_QUALITY_READ = "ingest:quality:read"
+# Alerts / notifications (channels + delivery).
+INGEST_ALERTS_READ = "ingest:alerts:read"
+INGEST_ALERTS_MANAGE = "ingest:alerts:manage"
+# Backfill / reprocessing (reprocess jobs/pipelines/control groups; watermark reset is separate).
+INGEST_BACKFILL_RUN = "ingest:backfill:run"
+INGEST_BACKFILL_WATERMARK = "ingest:backfill:watermark"
 # Runtime environment (managed image: libraries manifest + builds + cluster validation).
 INGEST_RUNTIME_READ = "ingest:runtime:read"
 INGEST_RUNTIME_LIBRARIES_WRITE = "ingest:runtime:libraries:write"
@@ -118,6 +126,11 @@ ALL_PERMISSIONS = {
     INGEST_RUNTIME_BUILD,
     INGEST_RUNTIME_ACTIVATE,
     INGEST_RUNTIME_VALIDATE,
+    INGEST_BACKFILL_RUN,
+    INGEST_BACKFILL_WATERMARK,
+    INGEST_QUALITY_READ,
+    INGEST_ALERTS_READ,
+    INGEST_ALERTS_MANAGE,
     INGEST_TAGS_READ,
     INGEST_TAGS_WRITE,
     INGEST_TAGS_DELETE,
@@ -127,7 +140,10 @@ ALL_PERMISSIONS = {
 # Mapping from t2c_data role -> ingest permissions.
 # IMPORTANT: viewer, stewardship and data_owner must NOT receive administrative permissions,
 # matching the rule already enforced in t2c_data.
-ROLE_PERMISSIONS: dict[str, set[str]] = {
+# DEPRECATED / UNUSED. The live access model is resolve_ingest_permissions() (admin-only
+# writes, granted users read-only). This legacy per-role map is NOT consulted anywhere — do
+# NOT wire it back into deps.py, or editor/data_owner would silently regain write access.
+_DEPRECATED_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "admin": {
         INGEST_ADMIN,
         INGEST_READ,
@@ -179,6 +195,11 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_BUILD,
         INGEST_RUNTIME_ACTIVATE,
         INGEST_RUNTIME_VALIDATE,
+        INGEST_BACKFILL_RUN,
+        INGEST_BACKFILL_WATERMARK,
+        INGEST_QUALITY_READ,
+        INGEST_ALERTS_READ,
+        INGEST_ALERTS_MANAGE,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_TAGS_DELETE,
@@ -223,6 +244,11 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_RUNTIME_LIBRARIES_WRITE,
         INGEST_RUNTIME_BUILD,
         INGEST_RUNTIME_VALIDATE,
+        INGEST_BACKFILL_RUN,
+        INGEST_BACKFILL_WATERMARK,
+        INGEST_QUALITY_READ,
+        INGEST_ALERTS_READ,
+        INGEST_ALERTS_MANAGE,
         INGEST_TAGS_READ,
         INGEST_TAGS_WRITE,
         INGEST_JOBS_TAGS_WRITE,
@@ -238,6 +264,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_READ,
         INGEST_LIBRARIES_READ,
         INGEST_RUNTIME_READ,
+        INGEST_QUALITY_READ,
+        INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
     "stewardship": {
@@ -252,6 +280,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_PIPELINES_READ,
         INGEST_LIBRARIES_READ,
         INGEST_RUNTIME_READ,
+        INGEST_QUALITY_READ,
+        INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
     "data_owner": {
@@ -272,6 +302,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         INGEST_LIBRARIES_READ,
         INGEST_RUNTIME_READ,
         INGEST_RUNTIME_VALIDATE,
+        INGEST_BACKFILL_RUN,
+        INGEST_QUALITY_READ,
+        INGEST_ALERTS_READ,
         INGEST_TAGS_READ,
     },
 }
@@ -279,12 +312,44 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
 # Roles that are administrators of the base platform always get full ingest access.
 ADMIN_ROLE_NAMES = {"admin", "superadmin", "owner"}
 
+# View-only permission set: every read permission and nothing that mutates, runs or reveals
+# secrets. Granted to any user an admin has explicitly allowed into the tool. Excludes
+# INGEST_ADMIN and INGEST_VARIABLES_SECRET_READ.
+READ_ONLY_PERMISSIONS = frozenset({
+    INGEST_READ,
+    INGEST_LOGS_READ,
+    INGEST_CLUSTERS_READ,
+    INGEST_AIRFLOW_READ,
+    INGEST_CONNECTIONS_READ,
+    # NOTE: INGEST_JOBS_CODE_READ is deliberately NOT here — job source can embed hardcoded
+    # credentials, so raw code is admin-only (consistent with masking variable/connection
+    # secrets from view-only users). Re-add if code visibility is desired for viewers.
+    INGEST_SCHEDULES_READ,
+    INGEST_CONTROL_READ,
+    INGEST_VARIABLES_READ,
+    INGEST_PIPELINES_READ,
+    INGEST_LIBRARIES_READ,
+    INGEST_QUALITY_READ,
+    INGEST_ALERTS_READ,
+    INGEST_RUNTIME_READ,
+    INGEST_TAGS_READ,
+})
 
-def permissions_for_roles(role_names: set[str]) -> set[str]:
-    """Resolve the effective ingest permissions for a set of t2c_data role names."""
+
+def resolve_ingest_permissions(role_names: set[str], has_access: bool) -> set[str]:
+    """Access model for the ingest tool.
+
+    - t2c_data admin roles (admin/superadmin/owner) -> FULL permissions: only admins can
+      create, run, edit or delete jobs, pipelines, connections, libraries, etc.
+    - any other user an admin has explicitly granted access to -> READ-ONLY (view everything,
+      change nothing).
+    - everyone else -> no access at all (empty set), even though credentials are shared with
+      t2c_data. Access is opt-in and admin-managed.
+
+    The legacy per-role grants (editor/data_owner/…) intentionally no longer apply.
+    """
     if role_names & ADMIN_ROLE_NAMES:
         return set(ALL_PERMISSIONS)
-    granted: set[str] = set()
-    for role in role_names:
-        granted |= ROLE_PERMISSIONS.get(role, set())
-    return granted
+    if has_access:
+        return set(READ_ONLY_PERMISSIONS)
+    return set()

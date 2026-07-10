@@ -90,8 +90,8 @@ def list_clusters(
         select(Cluster).order_by(Cluster.name).offset(params.offset).limit(params.limit)
     ).all()
     summ = cluster_state.summarize(cluster_state.fetch_master_state())
-    items = [_enrich(c, summ, persist=True) for c in rows]
-    db.commit()
+    items = [_enrich(c, summ, persist=False) for c in rows]
+    db.rollback()  # live overlay is response-only — never write on a GET
     return PageOut.build(items, total, params)
 
 
@@ -122,8 +122,8 @@ def get_cluster(
     if not cluster:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster not found")
     summ = cluster_state.summarize(cluster_state.fetch_master_state())
-    out = _enrich(cluster, summ, persist=True)
-    db.commit()
+    out = _enrich(cluster, summ, persist=False)
+    db.rollback()  # live overlay is response-only — never write on a GET
     return out
 
 
@@ -192,6 +192,12 @@ def test_connection(
     _enrich(cluster, summ, persist=True)
     record_audit(db, action="CLUSTER_TEST_SUCCEEDED" if reachable else "CLUSTER_TEST_FAILED",
                  user=user, entity_type="cluster", entity_id=cluster.id, detail={"message": message})
+    if not reachable:
+        from t2c_ingest.features.alerts.service import emit
+
+        emit(db, event_type="CLUSTER_UNAVAILABLE", severity="critical",
+             title=f"Cluster indisponível: {cluster.name}",
+             message=f"Spark master ({cluster.spark_master_url}) inacessível: {message}"[:1000])
     db.commit()
     return ClusterConnectionResult(reachable=reachable, master_url=cluster.spark_master_url, message=message,
                                    workers_detected=summ.get("workers") if reachable else None)
@@ -223,7 +229,7 @@ def _enqueue_runtime_validation(db: Session, user: CurrentUser, vtype: str) -> C
 
     libs = None
     if vtype == "libraries":
-        libs = [l.package_name for l in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
+        libs = [lib.package_name for lib in db.scalars(select(RuntimeLibrary).where(RuntimeLibrary.active.is_(True))).all()]
     val = RuntimeValidation(
         validation_type=vtype, status="queued",
         worker_count_expected=settings.spark_expected_workers, libraries_checked=libs, created_by=user.email,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -63,6 +64,13 @@ class Execution(TimestampMixin, Base):
     )
     parameters: Mapped[dict | None] = mapped_column(JSONB)
     triggered_by: Mapped[str | None] = mapped_column(String(255))
+    # Retry attempt number (1-based). Reliability fields: lease/heartbeat for orphan recovery,
+    # cancel_requested for cooperative cancellation of a running job.
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    worker_id: Mapped[str | None] = mapped_column(String(120))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

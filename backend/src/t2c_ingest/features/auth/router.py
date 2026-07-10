@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,19 +18,89 @@ from t2c_ingest.schemas.auth import LoginRequest, MeOut, TokenOut
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# In-memory login throttle (per process). Sliding window of failed attempts keyed by email+IP.
+# A best-effort brute-force/credential-stuffing brake; a shared store (Redis) would harden it
+# across replicas. Bounded in size and swept periodically so a flood of unique emails cannot
+# grow it without limit.
+_login_attempts: dict[tuple[str, str], list[float]] = {}
+_last_sweep = 0.0
+_MAX_KEYS = 50_000
+
+
+def _client_ip(request: Request | None) -> str:
+    if not request:
+        return "unknown"
+    # Trust the first hop only when behind our own reverse proxy (nginx sets X-Real-IP).
+    xff = request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _throttle_key(email: str, request: Request | None) -> tuple[str, str]:
+    return ((email or "").strip().lower(), _client_ip(request))
+
+
+def _sweep(now: float) -> None:
+    """Drop keys whose entire window has expired (bounds memory)."""
+    global _last_sweep
+    if now - _last_sweep < 60 and len(_login_attempts) < _MAX_KEYS:
+        return
+    _last_sweep = now
+    window = settings.login_window_seconds
+    for k in [k for k, ts in _login_attempts.items() if not ts or now - ts[-1] >= window]:
+        _login_attempts.pop(k, None)
+
+
+def _check_throttle(key: tuple[str, str]) -> None:
+    now = time.monotonic()
+    _sweep(now)
+    window = settings.login_window_seconds
+    attempts = [t for t in _login_attempts.get(key, []) if now - t < window]
+    if attempts:
+        _login_attempts[key] = attempts
+    else:
+        _login_attempts.pop(key, None)
+    if len(attempts) >= settings.login_max_attempts:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas de login. Tente novamente em alguns minutos.",
+        )
+
+
+def _record_failure(key: tuple[str, str]) -> None:
+    if len(_login_attempts) < _MAX_KEYS or key in _login_attempts:
+        _login_attempts.setdefault(key, []).append(time.monotonic())
+
+
+def _clear_failures(key: tuple[str, str]) -> None:
+    _login_attempts.pop(key, None)
+
 
 @router.post("/login", response_model=TokenOut)
-async def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenOut:
+async def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenOut:
     """Authenticate a user.
 
     - ``AUTH_MODE=direct`` (default): verify the password against t2c_data.users in the shared
       Postgres and mint the JWT here — no dependency on the t2c_data backend being up. Reuses
       the same credentials; it does not create or store any new user.
     - ``AUTH_MODE=proxy``: forward credentials to the t2c_data backend, which issues the token.
+
+    Throttling wraps BOTH modes so brute-force is braked regardless of AUTH_MODE.
     """
-    if settings.auth_mode.strip().lower() == "proxy":
-        return await _login_via_proxy(payload)
-    return _login_direct(payload, db)
+    key = _throttle_key(payload.email, request)
+    _check_throttle(key)
+    try:
+        if settings.auth_mode.strip().lower() == "proxy":
+            token = await _login_via_proxy(payload)
+        else:
+            token = _login_direct(payload, db)
+    except HTTPException as exc:
+        if exc.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN):
+            _record_failure(key)
+        raise
+    _clear_failures(key)
+    return token
 
 
 def _login_direct(payload: LoginRequest, db: Session) -> TokenOut:
@@ -43,10 +114,14 @@ def _login_direct(payload: LoginRequest, db: Session) -> TokenOut:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo"
         )
-    # DEV SIMPLIFICATION: MFA is not enforced in direct mode. Users with MFA enabled in
-    # t2c_data still log in here without a code. Use AUTH_MODE=proxy for full MFA handling.
-    if user.mfa_enabled:
-        logger.warning("Usuário %s tem MFA habilitado; ignorado no login direto (dev).", user.email)
+    # MFA: direct mode cannot perform the second-factor challenge. Fail closed for MFA-enabled
+    # users (they must authenticate via proxy mode, which delegates the full MFA flow to
+    # t2c_data). AUTH_ALLOW_MFA_BYPASS=true restores the legacy dev bypass.
+    if user.mfa_enabled and not settings.auth_allow_mfa_bypass:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este usuário tem MFA habilitado. Faça login pelo t2c_data (AUTH_MODE=proxy).",
+        )
     token = create_access_token(user.email, token_version=int(user.token_version or 0))
     return TokenOut(access_token=token)
 
@@ -97,4 +172,6 @@ def me(current_user: CurrentUser = Depends(get_current_user)) -> MeOut:
         name=current_user.name,
         roles=sorted(current_user.roles),
         permissions=sorted(current_user.permissions),
+        is_admin=current_user.is_admin,
+        has_access=current_user.has_access,
     )

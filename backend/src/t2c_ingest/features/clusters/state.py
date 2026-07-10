@@ -41,14 +41,20 @@ def _resolve_name(host: str, index: int) -> str:
     return f"worker-{index}"
 
 
-def fetch_master_state() -> dict | None:
-    """Return the raw master JSON, or None if unreachable."""
+def _fetch_master_state_uncached() -> dict | None:
     url = settings.runtime_spark_master_webui.rstrip("/") + "/json/"
     try:
         with urllib.request.urlopen(url, timeout=4) as resp:
             return json.loads(resp.read().decode())
     except Exception:  # noqa: BLE001
         return None
+
+
+def fetch_master_state() -> dict | None:
+    """Return the raw master JSON (cached briefly so many pollers share one HTTP call)."""
+    from t2c_ingest.core.cache import cached
+
+    return cached("spark:master-state", 5.0, _fetch_master_state_uncached)
 
 
 def summarize(state: dict | None) -> dict:

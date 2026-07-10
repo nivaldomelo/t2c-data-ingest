@@ -3,6 +3,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { useAuth } from "@/lib/auth";
 import LoginPage from "@/features/auth/LoginPage";
+import AccessDeniedPage from "@/features/auth/AccessDeniedPage";
+import AccessPage from "@/features/access/AccessPage";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import ClustersPage from "@/features/clusters/ClustersPage";
 import LibrariesPage from "@/features/libraries/LibrariesPage";
@@ -18,6 +20,10 @@ import SchedulesPage from "@/features/schedules/SchedulesPage";
 import TagsPage from "@/features/tags/TagsPage";
 import ExecutionsPage from "@/features/executions/ExecutionsPage";
 import ExecutionDetailPage from "@/features/executions/ExecutionDetailPage";
+import BackfillsPage from "@/features/backfill/BackfillsPage";
+import AlertsPage from "@/features/alerts/AlertsPage";
+import AuditPage from "@/features/audit/AuditPage";
+import DataQualityPage from "@/features/data-quality/DataQualityPage";
 import AirflowPage from "@/features/airflow/AirflowPage";
 
 export default function App() {
@@ -40,6 +46,11 @@ export default function App() {
     );
   }
 
+  // Autenticado, mas sem acesso liberado à ferramenta (não-admin sem grant).
+  if (!me.has_access) {
+    return <AccessDeniedPage />;
+  }
+
   return (
     <Routes>
       <Route element={<AppShell />}>
@@ -58,6 +69,11 @@ export default function App() {
         <Route path="/tags" element={<TagsPage />} />
         <Route path="/executions" element={<ExecutionsPage />} />
         <Route path="/executions/:id" element={<ExecutionDetailPage />} />
+        <Route path="/backfills" element={<BackfillsPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/audit" element={<AuditPage />} />
+        <Route path="/data-quality" element={<DataQualityPage />} />
+        {me.is_admin && <Route path="/access" element={<AccessPage />} />}
         <Route path="/airflow" element={<AirflowPage />} />
       </Route>
       <Route path="/login" element={<Navigate to="/" replace />} />

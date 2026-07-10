@@ -125,6 +125,53 @@ class Settings(BaseSettings):
     library_pip_user: bool = Field(default=True, validation_alias="LIBRARY_PIP_USER")
     library_install_timeout: int = Field(default=600, validation_alias="LIBRARY_INSTALL_TIMEOUT")
 
+    # ── Data quality reconciliation (query source/target DBs after a run) ──
+    dq_reconcile_enabled: bool = Field(default=True, validation_alias="DQ_RECONCILE_ENABLED")
+    dq_reconcile_timeout: int = Field(default=8, validation_alias="DQ_RECONCILE_TIMEOUT")
+
+    # ── Security hardening ──
+    # Allow alert webhooks to target internal/private hosts (SSRF guard off). Default: block.
+    alerts_allow_internal_targets: bool = Field(
+        default=False, validation_alias="ALERTS_ALLOW_INTERNAL_TARGETS"
+    )
+    # Alert delivery retry: attempts with exponential backoff before a notification goes 'dead'.
+    alert_max_attempts: int = Field(default=5, validation_alias="ALERT_MAX_ATTEMPTS")
+    alert_retry_base_seconds: int = Field(default=30, validation_alias="ALERT_RETRY_BASE_SECONDS")
+    # Suppress identical (channel+event+entity) alerts within this window (anti-storm).
+    alert_dedup_seconds: int = Field(default=300, validation_alias="ALERT_DEDUP_SECONDS")
+    # Silent-failure monitors.
+    schedule_overdue_grace_seconds: int = Field(default=300, validation_alias="SCHEDULE_OVERDUE_GRACE_SECONDS")
+    worker_down_threshold_seconds: int = Field(default=180, validation_alias="WORKER_DOWN_THRESHOLD_SECONDS")
+    # E-mail alert channel (SMTP). Empty host disables email delivery.
+    smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_user: str = Field(default="", validation_alias="SMTP_USER")
+    smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", validation_alias="SMTP_FROM")
+    smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
+    # Direct-mode login: by default users with MFA enabled must authenticate via proxy mode
+    # (which performs the full MFA challenge). Set true to allow the legacy dev bypass.
+    auth_allow_mfa_bypass: bool = Field(default=False, validation_alias="AUTH_ALLOW_MFA_BYPASS")
+    # Login throttling (per email+IP): max failed attempts within the window before 429.
+    login_max_attempts: int = Field(default=8, validation_alias="LOGIN_MAX_ATTEMPTS")
+    login_window_seconds: int = Field(default=300, validation_alias="LOGIN_WINDOW_SECONDS")
+
+    # ── Retention (append-only tables). 0 disables that table's pruning. Days. ──
+    retention_execution_logs_days: int = Field(default=90, validation_alias="RETENTION_EXECUTION_LOGS_DAYS")
+    retention_executions_days: int = Field(default=0, validation_alias="RETENTION_EXECUTIONS_DAYS")
+    retention_schedule_runs_days: int = Field(default=90, validation_alias="RETENTION_SCHEDULE_RUNS_DAYS")
+    retention_alert_notifications_days: int = Field(default=90, validation_alias="RETENTION_ALERT_NOTIFICATIONS_DAYS")
+    retention_audit_days: int = Field(default=0, validation_alias="RETENTION_AUDIT_DAYS")
+    retention_interval_seconds: int = Field(default=3600, validation_alias="RETENTION_INTERVAL_SECONDS")
+
+    # ── Execution reliability ──
+    # Lease TTL for a running execution; a reaper fails runs whose lease expired (worker crash).
+    worker_lease_ttl_seconds: int = Field(default=120, validation_alias="WORKER_LEASE_TTL_SECONDS")
+    # How often the worker refreshes the lease / checks cancel while a job runs.
+    worker_heartbeat_seconds: int = Field(default=20, validation_alias="WORKER_HEARTBEAT_SECONDS")
+    # Integration outbox: retry attempts before a push to t2c_data is marked dead + alerted.
+    integration_max_attempts: int = Field(default=10, validation_alias="INTEGRATION_MAX_ATTEMPTS")
+
     # ── Cluster runtime image (libraries + jobs baked into a versioned image) ──
     runtime_image_name: str = Field(default="t2c-data-ingest-spark-runtime", validation_alias="RUNTIME_IMAGE_NAME")
     runtime_base_image: str = Field(default="apache/spark:3.5.1", validation_alias="RUNTIME_BASE_IMAGE")
@@ -134,6 +181,10 @@ class Settings(BaseSettings):
     # A running Spark container the worker uses (via `docker exec`) to spark-submit validations,
     # so the driver Python matches the executors (the runtime image). Empty disables docker exec.
     runtime_spark_submit_container: str = Field(default="", validation_alias="RUNTIME_SPARK_SUBMIT_CONTAINER")
+    # Submit real Spark jobs via `docker exec` into a Spark container so the DRIVER's Python
+    # matches the EXECUTORS' (both the runtime image). Fixes the driver/executor version mismatch
+    # (UDFs/pandas). Requires runtime_spark_submit_container. Off -> submit from the worker.
+    spark_submit_via_container: bool = Field(default=True, validation_alias="SPARK_SUBMIT_VIA_CONTAINER")
     spark_expected_workers: int = Field(default=3, validation_alias="SPARK_EXPECTED_WORKERS")
     # Applying an active image to the local cluster: retag to this tag (used by the worker
     # services in docker-compose) and recreate these containers with the new image.
@@ -191,6 +242,24 @@ class Settings(BaseSettings):
     @property
     def is_dev(self) -> bool:
         return is_dev_environment(self.env)
+
+    def security_errors(self) -> list[str]:
+        """Return fatal misconfigurations for a non-dev environment (empty in dev or when
+        allow_insecure_defaults is explicitly set)."""
+        if self.is_dev or self.allow_insecure_defaults:
+            return []
+        errors: list[str] = []
+        weak = {"", "change-me", "change-me-must-match-t2c-data"}
+        if (self.jwt_secret_key or "").strip() in weak or len((self.jwt_secret_key or "").strip()) < 32:
+            errors.append("JWT_SECRET_KEY ausente/fraco (defina um segredo forte, >= 32 chars).")
+        if not (self.connection_secret_key or "").strip():
+            errors.append(
+                "CONNECTION_SECRET_KEY ausente: a chave de criptografia em repouso não pode "
+                "recair sobre o segredo do JWT. Gere uma com Fernet.generate_key()."
+            )
+        if self.cors_allow_origins.strip() == "*":
+            errors.append("CORS_ALLOW_ORIGINS='*' não é permitido com credenciais habilitadas.")
+        return errors
 
 
 settings = Settings()

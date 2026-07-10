@@ -9,6 +9,8 @@ export interface Me {
   name: string | null;
   roles: string[];
   permissions: string[];
+  is_admin: boolean;
+  has_access: boolean;
 }
 
 interface AuthContextValue {

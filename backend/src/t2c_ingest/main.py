@@ -6,20 +6,41 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from t2c_ingest.api.router import api_router
+from t2c_ingest.core.bootstrap import enforce_secure_config
 from t2c_ingest.core.config import settings
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Fail fast on insecure production configuration (default JWT/encryption secrets, wildcard CORS
+# with credentials). No-op in dev or when ALLOW_INSECURE_DEFAULTS is explicitly set.
+enforce_secure_config()
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
-if settings.cors_origins_list:
+# Never combine credentialed CORS with a wildcard origin.
+_origins = [o for o in settings.cors_origins_list if o != "*"]
+if _origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
+        allow_origins=_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+elif settings.cors_origins_list:
+    logger.warning("CORS_ALLOW_ORIGINS='*' ignorado: incompatível com credenciais.")
+
+
+@app.middleware("http")
+async def _capture_request_meta(request, call_next):
+    """Record client IP + user-agent for audit trails (honors the reverse proxy's X-Real-IP)."""
+    from t2c_ingest.core.request_ctx import set_request_meta
+
+    xff = request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for", "")
+    ip = (xff.split(",")[0].strip() if xff else None) or (request.client.host if request.client else None)
+    set_request_meta(ip, request.headers.get("user-agent"))
+    return await call_next(request)
 
 
 # Liveness/readiness without auth or the /api/v1 prefix (Turn2C standard).

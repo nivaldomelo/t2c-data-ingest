@@ -29,11 +29,13 @@ class IngestionControlCreate(IngestionControlBase):
 
 
 class IngestionControlUpdate(BaseModel):
+    # NOTE: watermark_atual is intentionally NOT updatable here. Resetting the watermark must
+    # flow through the permission-gated, audited backfill endpoint (INGEST_BACKFILL_WATERMARK)
+    # so the change is authorized and recorded — not silently via a routine control edit.
     nome_tabela: str | None = None
     coluna_data: str | None = None
     coluna_ultima_alteracao: str | None = None
     grupo: str | None = None
-    watermark_atual: datetime | None = None
     ultima_execucao: datetime | None = None
     status: str | None = None
     observacao: str | None = None

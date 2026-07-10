@@ -32,7 +32,8 @@ def _now() -> datetime:
 
 
 def start_pipeline_execution(
-    db: Session, pipeline: PipelineDefinition, *, triggered_by: str, trigger_type: str = "manual"
+    db: Session, pipeline: PipelineDefinition, *, triggered_by: str, trigger_type: str = "manual",
+    from_step_id: int | None = None,
 ) -> PipelineExecution:
     pe = PipelineExecution(
         pipeline_id=pipeline.id, status="running", trigger_type=trigger_type,
@@ -48,8 +49,33 @@ def start_pipeline_execution(
             )
         )
     db.flush()
+    # Reprocess "from a step": mark steps NOT in {from_step} ∪ downstream as already-done so the
+    # chosen step (and everything after it) runs while upstreams are reused.
+    if from_step_id:
+        keep = _downstream_closure(db, pipeline.id, from_step_id)
+        for se in db.scalars(select(PipelineStepExecution).where(PipelineStepExecution.pipeline_execution_id == pe.id)).all():
+            if se.step_id not in keep:
+                se.status = "success"
+                se.message = "Reaproveitado (reprocessamento a partir do step selecionado)."
+                se.finished_at = _now()
+        db.flush()
     _release_ready_steps(db, pe)
     return pe
+
+
+def _downstream_closure(db: Session, pipeline_id: int, start_step_id: int) -> set[int]:
+    """Return {start_step} plus every step reachable following downstream dependency edges."""
+    adj: dict[int, list[int]] = {}
+    for d in _deps(db, pipeline_id):
+        adj.setdefault(d.upstream_step_id, []).append(d.downstream_step_id)
+    seen = {start_step_id}
+    stack = [start_step_id]
+    while stack:
+        for nxt in adj.get(stack.pop(), []):
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return seen
 
 
 def _step_map(db: Session, pipeline_id: int) -> dict[int, PipelineStep]:
@@ -59,6 +85,35 @@ def _step_map(db: Session, pipeline_id: int) -> dict[int, PipelineStep]:
 
 def _deps(db: Session, pipeline_id: int) -> list[PipelineStepDependency]:
     return list(db.scalars(select(PipelineStepDependency).where(PipelineStepDependency.pipeline_id == pipeline_id)).all())
+
+
+_TERMINAL_STEP = {"success", "failed", "skipped", "timeout", "cancelled"}
+
+
+def _dep_satisfied(dtype: str | None, up) -> bool:
+    """Whether an upstream currently satisfies a dependency (requires it to be terminal)."""
+    if up is None or up.status not in _TERMINAL_STEP:
+        return False
+    dtype = dtype or "success"
+    if dtype == "success":
+        return up.status == "success"
+    if dtype == "failed":
+        return up.status == "failed"
+    return True  # finished / always: any terminal outcome satisfies
+
+
+def _dep_impossible(dtype: str | None, up) -> bool:
+    """Whether a dependency can NEVER be satisfied given the upstream's terminal state."""
+    if up is None:
+        return True
+    if up.status not in _TERMINAL_STEP:
+        return False  # still running/pending — may yet be satisfied
+    dtype = dtype or "success"
+    if dtype == "success":
+        return up.status != "success"
+    if dtype == "failed":
+        return up.status != "failed"
+    return False  # finished / always: never impossible once terminal
 
 
 def _release_ready_steps(db: Session, pe: PipelineExecution) -> None:
@@ -80,21 +135,15 @@ def _release_ready_steps(db: Session, pe: PipelineExecution) -> None:
             if se.status != "pending":
                 continue
             ups = upstreams.get(se.step_id, [])
-            up_states = [by_step_id.get(d.upstream_step_id) for d in ups]
-            # An upstream that failed/skipped blocks a 'success' dependency.
-            blocked = any(
-                (u is None or u.status in {"failed", "skipped"})
-                for d, u in zip(ups, up_states)
-                if d.dependency_type in ("success", None)
-            )
-            if blocked:
+            pairs = [(d.dependency_type, by_step_id.get(d.upstream_step_id)) for d in ups]
+            # Block (skip) if any dependency can NEVER be satisfied given the upstream's terminal state.
+            if any(_dep_impossible(dtype, u) for dtype, u in pairs):
                 se.status = "skipped"
-                se.message = "Upstream falhou ou foi ignorado."
+                se.message = "Dependência não pode ser satisfeita (upstream)."
                 se.finished_at = _now()
                 changed = True
                 continue
-            ready = all(u is not None and u.status == "success" for u in up_states)
-            if ready:
+            if all(_dep_satisfied(dtype, u) for dtype, u in pairs):
                 _enqueue_step(db, se, steps.get(se.step_id))
                 changed = True
     db.flush()
@@ -108,6 +157,10 @@ def _enqueue_step(db: Session, se: PipelineStepExecution, step: PipelineStep | N
         se.finished_at = _now()
         return
     params = {**(step.parameters or {})}
+    # Per-step timeout overrides the job's (honored by the worker). Carried in parameters to
+    # avoid a schema change; the worker reads _timeout_seconds when present.
+    if step and step.timeout_seconds:
+        params["_timeout_seconds"] = int(step.timeout_seconds)
     execution = create_job_execution(
         db, job=job, triggered_by="pipeline", trigger_type="pipeline", parameters=params
     )
@@ -167,3 +220,15 @@ def _advance_one(db: Session, pe: PipelineExecution) -> None:
     pe.finished_at = _now()
     if pe.started_at:
         pe.duration_seconds = int((pe.finished_at - pe.started_at).total_seconds())
+    if pe.status in ("failed", "partial_success"):
+        try:
+            from t2c_ingest.features.alerts.service import emit
+            from t2c_ingest.models.pipeline import PipelineDefinition
+
+            pd = db.get(PipelineDefinition, pe.pipeline_id)
+            emit(db, event_type="PIPELINE_FAILED",
+                 severity="critical" if pe.status == "failed" else "warning",
+                 title=f"Pipeline {'falhou' if pe.status == 'failed' else 'concluiu com falhas'}: {pd.name if pd else pe.pipeline_id}",
+                 message=pe.message, pipeline_id=pe.pipeline_id, execution_id=pe.id)
+        except Exception:  # noqa: BLE001
+            pass
