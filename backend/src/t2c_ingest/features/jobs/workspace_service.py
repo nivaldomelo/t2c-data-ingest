@@ -124,8 +124,18 @@ def _backup(job_id: int, real: str, action: str, rel: str) -> str | None:
 
 
 # ── operations (return metadata; router persists version + audit) ──
+def check_readable(path: str) -> None:
+    """Defense-in-depth: never serve secret/blocked files or dotfiles, even by direct path."""
+    base = os.path.basename(path)
+    if base.startswith("."):
+        raise WorkspaceError(403, "Arquivos ocultos não podem ser lidos.")
+    if os.path.splitext(path)[1].lower() in BLOCKED_EXT:
+        raise WorkspaceError(403, "Este tipo de arquivo não pode ser lido (possível segredo).")
+
+
 def read_file(root: str, rel: str) -> dict:
     real = safe_path(root, rel, must_exist=True)
+    check_readable(real)
     if not os.path.isfile(real):
         raise WorkspaceError(400, "O caminho não aponta para um arquivo.")
     if os.path.getsize(real) > MAX_BYTES:

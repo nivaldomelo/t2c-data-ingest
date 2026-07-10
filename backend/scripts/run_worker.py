@@ -45,12 +45,14 @@ def _lease_until() -> datetime:
 
 
 def _log(db, execution_id: int, seq: int, level: str, message: str) -> int:
+    from t2c_ingest.core.log_masking import mask_secrets
+
     db.add(
         ExecutionLog(
             execution_id=execution_id,
             seq=seq,
             level=level,
-            message=message[:100_000],
+            message=mask_secrets(message)[:100_000],
             logged_at=_now(),
         )
     )
@@ -174,7 +176,13 @@ def _run_one(db, execution: Execution) -> None:
         env = {**_os_environ()}
         env.update({k: str(v) for k, v in (job.env_vars or {}).items()})
         env.update(connection_env)  # SOURCE_*/TARGET_* (includes decrypted passwords)
+        # Exact secret values to redact from captured output (the decrypted connection creds).
+        from t2c_ingest.core.log_masking import mask_secrets
+
+        secret_values = [v for k, v in connection_env.items() if "PASSWORD" in k.upper() and v]
         stdout, stderr, returncode, outcome = _run_subprocess(db, execution, cmd, env, job)
+        stdout = mask_secrets(stdout, secret_values)
+        stderr = mask_secrets(stderr, secret_values)
         if stdout:
             seq = _log(db, execution.id, seq, "INFO", stdout)
         if stderr:
