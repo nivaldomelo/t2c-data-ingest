@@ -178,6 +178,8 @@ class Settings(BaseSettings):
     # Where build contexts are written (mounted volume). The worker runs `docker build` here.
     runtime_build_context_dir: str = Field(default="/opt/t2c/runtime/builds", validation_alias="RUNTIME_BUILD_CONTEXT_DIR")
     runtime_build_timeout: int = Field(default=1800, validation_alias="RUNTIME_BUILD_TIMEOUT")
+    # Timeout (s) for a Data Lake quick-query spark-submit. Scan reuses runtime_build_timeout.
+    data_lake_query_timeout: int = Field(default=120, validation_alias="DATA_LAKE_QUERY_TIMEOUT")
     # A running Spark container the worker uses (via `docker exec`) to spark-submit validations,
     # so the driver Python matches the executors (the runtime image). Empty disables docker exec.
     runtime_spark_submit_container: str = Field(default="", validation_alias="RUNTIME_SPARK_SUBMIT_CONTAINER")
