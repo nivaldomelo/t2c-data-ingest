@@ -11,6 +11,7 @@ from t2c_ingest.features.cluster_libraries.router import actions_router as libra
 from t2c_ingest.features.clusters.router import router as clusters_router
 from t2c_ingest.features.clusters.router import cv_router as cluster_validations_router
 from t2c_ingest.features.connections.router import router as connections_router
+from t2c_ingest.features.data_lake.router import router as data_lake_router
 from t2c_ingest.features.data_quality.router import router as data_quality_router
 from t2c_ingest.features.dashboard.router import router as dashboard_router
 from t2c_ingest.features.executions.router import router as executions_router
@@ -47,4 +48,5 @@ api_router.include_router(backfill_router)
 api_router.include_router(libraries_router)
 api_router.include_router(library_actions_router)
 api_router.include_router(runtime_router)
+api_router.include_router(data_lake_router)
 api_router.include_router(airflow_router)

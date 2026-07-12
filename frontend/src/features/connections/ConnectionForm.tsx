@@ -69,6 +69,8 @@ function toValues(c: Connection | null): ConnectionFormValues {
     aws_access_key_id: "",
     aws_secret_access_key: "",
     aws_session_token: "",
+    catalog_enabled: !!ep.catalog_enabled,
+    catalog_mode: ep.catalog_mode ?? "layer_as_schema",
   };
 }
 
@@ -162,6 +164,15 @@ export function ConnectionForm({
       if (showRole) {
         extra.role_arn = v.role_arn.trim() || undefined;
         extra.external_id = v.external_id.trim() || undefined;
+      }
+      if (v.catalog_enabled) {
+        extra.catalog_enabled = true;
+        extra.catalog_mode = v.catalog_mode;
+        extra.default_file_format = "parquet";
+        // Sem camadas explícitas: o backend usa o bucket/prefixo desta conexão como um schema.
+        if (v.catalog_mode === "layer_as_schema") {
+          extra.layers = [{ name: (v.default_layer.trim() || "datalake"), bucket, base_prefix: prefix || undefined }];
+        }
       }
       base.extra_params = extra as Record<string, unknown>;
       // Secrets só quando preenchidos (vazio mantém o atual no modo edição).
@@ -380,6 +391,27 @@ export function ConnectionForm({
                   ? "As credenciais virão do profile da instância/pod (EC2/EKS). Nenhuma chave é armazenada."
                   : "As credenciais virão das variáveis de ambiente do runtime (AWS_ACCESS_KEY_ID etc.). Nenhuma chave é armazenada."}
               </p>
+            )}
+
+            {/* ── Catálogo (Data Lake) ── */}
+            <div className="sm:col-span-2 mt-2 border-t border-gray-100 pt-4">
+              <span className={sectionTitle}>Catálogo (Data Lake)</span>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2">
+              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500/30" checked={v.catalog_enabled} onChange={(e) => set("catalog_enabled", e.target.checked)} />
+              Habilitar catálogo — explorar camadas/tabelas na tela Data Lake
+            </label>
+            {v.catalog_enabled && (
+              <div className="sm:col-span-2">
+                <label className={label}>Mapeamento de schema</label>
+                <select className={field} value={v.catalog_mode} onChange={(e) => set("catalog_mode", e.target.value)}>
+                  <option value="layer_as_schema">Camada = schema (bucket/prefixo desta conexão vira um schema)</option>
+                  <option value="prefix_as_schema">Prefixo = schema (1º nível do prefixo vira schema)</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  Bronze/Silver/Gold aparecem como schemas e as pastas como tabelas. Após salvar, use “Atualizar catálogo” na tela Data Lake.
+                </p>
+              </div>
             )}
 
             {/* ── Permissões ── */}

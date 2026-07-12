@@ -15,3 +15,5 @@ python-multipart>=0.0.20
 
 # AWS SDK for S3 / Data Lake connections
 boto3>=1.35.0
+# Parquet footer reading for Data Lake catalog schema inference (no Spark needed for scan)
+pyarrow>=15.0.0

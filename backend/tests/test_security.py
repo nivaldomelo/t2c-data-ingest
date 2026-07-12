@@ -130,6 +130,55 @@ def test_rbac_resolution():
         assert p not in viewer
 
 
+def test_data_lake_sql_guard_allows_reads():
+    from t2c_ingest.features.data_lake import sql_guard as g
+    for ok in ("SELECT * FROM bronze.clientes", "with x as (select 1) select * from x",
+               "SHOW TABLES", "DESCRIBE bronze.clientes", "EXPLAIN SELECT 1"):
+        assert g.validate_read_only(ok)
+
+
+def test_data_lake_sql_guard_blocks_writes_and_multi():
+    from t2c_ingest.features.data_lake import sql_guard as g
+    for bad in ("DROP TABLE x", "INSERT INTO x VALUES (1)", "UPDATE x SET a=1", "DELETE FROM x",
+                "MERGE INTO x", "ALTER TABLE x", "CREATE TABLE x AS SELECT 1", "TRUNCATE TABLE x",
+                "SET spark.foo=1", "MSCK REPAIR TABLE x", "REFRESH TABLE x", "ADD JAR x",
+                "CACHE TABLE x", "SELECT 1; DROP TABLE x", ""):
+        with pytest.raises(g.SqlGuardError):
+            g.validate_read_only(bad)
+
+
+def test_data_lake_sql_guard_limit_and_translate():
+    from t2c_ingest.features.data_lake import sql_guard as g
+    # LIMIT applied when absent; capped to MAX when too big; not appended to SHOW.
+    assert g.apply_limit("SELECT * FROM t", None) == ("SELECT * FROM t LIMIT 100", 100)
+    assert g.apply_limit("SELECT * FROM t LIMIT 99999", None) == ("SELECT * FROM t LIMIT 1000", 1000)
+    assert g.apply_limit("SELECT * FROM t", 50) == ("SELECT * FROM t LIMIT 50", 50)
+    assert g.apply_limit("SHOW TABLES", None)[0] == "SHOW TABLES"
+    # Logical name translated only when the view is known.
+    assert g.translate_logical_names("SELECT * FROM bronze.clientes", {"bronze__clientes"}) == \
+        "SELECT * FROM bronze__clientes"
+    assert g.translate_logical_names("SELECT * FROM other.tbl", {"bronze__clientes"}) == \
+        "SELECT * FROM other.tbl"
+
+
+def test_data_lake_catalog_config():
+    from types import SimpleNamespace
+    from t2c_ingest.features.data_lake.catalog_config import resolve_catalog_config
+    disabled = resolve_catalog_config(SimpleNamespace(extra_params={}))
+    assert disabled.enabled is False
+    layered = resolve_catalog_config(SimpleNamespace(extra_params={
+        "catalog_enabled": True, "catalog_mode": "layer_as_schema",
+        "layers": [{"name": "bronze", "bucket": "b-bronze", "base_prefix": "datalake"}],
+    }))
+    assert layered.enabled and layered.mode == "layer_as_schema"
+    assert layered.layers[0].name == "bronze" and layered.layers[0].bucket == "b-bronze"
+    prefixed = resolve_catalog_config(SimpleNamespace(extra_params={
+        "catalog_enabled": True, "catalog_mode": "prefix_as_schema",
+        "bucket_name": "lake", "base_prefix": "/datalake/",
+    }))
+    assert prefixed.mode == "prefix_as_schema" and prefixed.root.base_prefix == "datalake"
+
+
 def test_rbac_s3_permissions():
     admin = perms.resolve_ingest_permissions({"admin"}, has_access=False)
     viewer = perms.resolve_ingest_permissions({"viewer"}, has_access=True)

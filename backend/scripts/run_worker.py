@@ -506,6 +506,37 @@ def _process_runtime_jobs() -> bool:
     return ran
 
 
+def _process_data_lake_jobs() -> bool:
+    """Claim and run one queued Data Lake scan or quick-query (runs Spark via docker exec)."""
+    try:
+        from t2c_ingest.features.data_lake.service import run_query, run_scan
+        from t2c_ingest.models.data_lake import DataLakeQueryHistory, DataLakeScanRun
+
+        with SessionLocal() as db:
+            run = db.scalar(
+                select(DataLakeScanRun).where(DataLakeScanRun.status == "queued")
+                .order_by(DataLakeScanRun.id).with_for_update(skip_locked=True).limit(1)
+            )
+            if run is not None:
+                print(f"[worker] data-lake scan {run.id} (catalog {run.catalog_id})")
+                run_scan(db, run)
+                print(f"[worker] data-lake scan {run.id} -> {run.status}")
+                return True
+        with SessionLocal() as db:
+            q = db.scalar(
+                select(DataLakeQueryHistory).where(DataLakeQueryHistory.status == "queued")
+                .order_by(DataLakeQueryHistory.id).with_for_update(skip_locked=True).limit(1)
+            )
+            if q is not None:
+                print(f"[worker] data-lake query {q.id}")
+                run_query(db, q)
+                print(f"[worker] data-lake query {q.id} -> {q.status}")
+                return True
+    except Exception as exc:  # noqa: BLE001 - never let a data-lake job kill the worker loop
+        print(f"[worker] data-lake job error: {exc}")
+    return False
+
+
 def _reap_stale_executions() -> None:
     """Fail (and retry) executions whose worker died — their lease expired while 'running'."""
     try:
@@ -576,6 +607,8 @@ def _run_orchestration() -> bool:
             if _process_library_actions():
                 ran = True
             if _process_runtime_jobs():
+                ran = True
+            if _process_data_lake_jobs():  # catalog scan / quick query (Spark via docker exec)
                 ran = True
             _reap_stale_executions()  # recover orphaned runs
             _maybe_run_retention()    # prune old rows (interval-guarded)

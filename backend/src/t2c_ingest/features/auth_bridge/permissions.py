@@ -21,6 +21,11 @@ INGEST_CONNECTIONS_DELETE = "ingest:connections:delete"
 INGEST_S3_READ = "ingest:s3:read"
 INGEST_S3_WRITE = "ingest:s3:write"
 INGEST_S3_LIST = "ingest:s3:list"
+# Data Lake explorer / catalog (Bronze/Silver/Gold as schemas, folders as tables).
+INGEST_DATA_LAKE_READ = "ingest:data-lake:read"
+INGEST_DATA_LAKE_SCAN = "ingest:data-lake:scan"
+INGEST_DATA_LAKE_QUERY = "ingest:data-lake:query"
+INGEST_DATA_LAKE_ADMIN = "ingest:data-lake:admin"
 # Creating a job (admin/editor).
 INGEST_JOBS_CREATE = "ingest:jobs:create"
 # Deleting a job (soft delete + code archival). Reserved to admins in this version.
@@ -98,6 +103,10 @@ ALL_PERMISSIONS = {
     INGEST_S3_READ,
     INGEST_S3_WRITE,
     INGEST_S3_LIST,
+    INGEST_DATA_LAKE_READ,
+    INGEST_DATA_LAKE_SCAN,
+    INGEST_DATA_LAKE_QUERY,
+    INGEST_DATA_LAKE_ADMIN,
     INGEST_JOBS_CREATE,
     INGEST_JOBS_DELETE,
     INGEST_JOBS_CODE_READ,
@@ -330,6 +339,9 @@ READ_ONLY_PERMISSIONS = frozenset({
     INGEST_CONNECTIONS_READ,
     INGEST_S3_READ,
     INGEST_S3_LIST,
+    # Data Lake: view-only users may browse the catalog. Running a scan or a quick query
+    # spins up Spark (a mutating/compute action) and stays admin-only.
+    INGEST_DATA_LAKE_READ,
     # NOTE: INGEST_JOBS_CODE_READ is deliberately NOT here — job source can embed hardcoded
     # credentials, so raw code is admin-only (consistent with masking variable/connection
     # secrets from view-only users). Re-add if code visibility is desired for viewers.

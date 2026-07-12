@@ -11,6 +11,7 @@ import LibrariesPage from "@/features/libraries/LibrariesPage";
 import RuntimePage from "@/features/runtime/RuntimePage";
 import ConnectionsPage from "@/features/connections/ConnectionsPage";
 import IngestionControlPage from "@/features/ingestion-control/IngestionControlPage";
+import DataLakePage from "@/features/data-lake/DataLakePage";
 import VariablesPage from "@/features/variables/VariablesPage";
 import JobsPage from "@/features/jobs/JobsPage";
 import JobDetailPage from "@/features/jobs/JobDetailPage";
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/connections" element={<ConnectionsPage />} />
         <Route path="/ingestion-control" element={<IngestionControlPage />} />
+        <Route path="/data-lake" element={<DataLakePage />} />
         <Route path="/variables" element={<VariablesPage />} />
         <Route path="/clusters" element={<ClustersPage />} />
         <Route path="/libraries" element={<LibrariesPage />} />
