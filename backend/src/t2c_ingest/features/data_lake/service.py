@@ -239,10 +239,10 @@ def _spark_submit(script: str, argv: list[str], env: dict, confs: list[str], mar
     # cluster capacity — appropriate for a bounded read-only sample. s3a jars are baked in.
     submit = (
         "/opt/spark/bin/spark-submit"
-        " --master 'local[2]'"
+        " --master 'local[1]'"
         " --conf spark.pyspark.python=/usr/bin/python3"
         " --conf spark.ui.enabled=false"
-        " --driver-memory 900m"
+        f" --driver-memory {shlex.quote(settings.data_lake_query_driver_memory)}"
         f" {conf_str} {shlex.quote(script)} {argv_str}"
     )
     exec_env = []

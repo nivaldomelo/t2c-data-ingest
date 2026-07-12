@@ -180,6 +180,8 @@ class Settings(BaseSettings):
     runtime_build_timeout: int = Field(default=1800, validation_alias="RUNTIME_BUILD_TIMEOUT")
     # Timeout (s) for a Data Lake quick-query spark-submit. Scan reuses runtime_build_timeout.
     data_lake_query_timeout: int = Field(default=120, validation_alias="DATA_LAKE_QUERY_TIMEOUT")
+    # Driver heap for the local-mode quick-query JVM. Tune down on memory-constrained hosts.
+    data_lake_query_driver_memory: str = Field(default="512m", validation_alias="DATA_LAKE_QUERY_DRIVER_MEMORY")
     # A running Spark container the worker uses (via `docker exec`) to spark-submit validations,
     # so the driver Python matches the executors (the runtime image). Empty disables docker exec.
     runtime_spark_submit_container: str = Field(default="", validation_alias="RUNTIME_SPARK_SUBMIT_CONTAINER")
