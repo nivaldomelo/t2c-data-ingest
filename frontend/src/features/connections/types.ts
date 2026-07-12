@@ -56,6 +56,12 @@ export interface S3ExtraParams {
   role_arn?: string;
   external_id?: string;
   ssl_enabled?: boolean;
+  // Catálogo do Data Lake (explorer)
+  catalog_enabled?: boolean;
+  catalog_mode?: string;
+  default_file_format?: string;
+  partition_pattern?: string;
+  layers?: { name: string; bucket: string; base_prefix?: string }[];
 }
 
 export interface S3ObjectItem {
@@ -116,6 +122,9 @@ export interface ConnectionFormValues {
   aws_access_key_id: string;
   aws_secret_access_key: string;
   aws_session_token: string;
+  // Catálogo Data Lake
+  catalog_enabled: boolean;
+  catalog_mode: string;
 }
 
 export const DEFAULT_PORTS: Record<ConnectionType, number | null> = {

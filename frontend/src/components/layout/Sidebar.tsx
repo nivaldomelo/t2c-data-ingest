@@ -74,6 +74,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { to: "/ingestion-control", label: "Controle de Ingestão", icon: Database, perm: "ingest:control:read" },
       { to: "/connections", label: "Conexões", icon: Plug, perm: "ingest:connections:read" },
+      { to: "/data-lake", label: "Data Lake", icon: Boxes, perm: "ingest:data-lake:read" },
       { to: "/variables", label: "Variáveis", icon: Variable, perm: "ingest:variables:read" },
       { to: "/tags", label: "Tags", icon: TagsIcon, perm: "ingest:tags:read" },
     ],
