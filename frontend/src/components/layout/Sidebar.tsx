@@ -153,8 +153,10 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           className={cn(
-            "absolute inset-y-0 left-0 z-30 flex h-full flex-col overflow-hidden bg-graphite-900 transition-[width] duration-200 ease-in-out",
-            hovered ? cn(EXPANDED_W, "shadow-2xl") : COLLAPSED_W
+            "absolute inset-y-0 left-0 flex h-full flex-col overflow-hidden bg-graphite-900 transition-[width] duration-200 ease-in-out",
+            // Sidebar sempre acima da topbar/busca (que é z-20). Expandida sobe mais ainda para
+            // sobrepor o conteúdo com folga.
+            hovered ? cn(EXPANDED_W, "z-50 shadow-2xl") : cn(COLLAPSED_W, "z-40")
           )}
         >
           <SidebarInner expanded={hovered} onNavigate={onClose} />

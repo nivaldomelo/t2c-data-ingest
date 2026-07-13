@@ -16,7 +16,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const label = me?.name ?? me?.email ?? "";
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6">
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6">
       {/* Abre o menu lateral no mobile */}
       <button
         type="button"
