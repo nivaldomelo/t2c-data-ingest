@@ -101,12 +101,34 @@ def table_detail(db: Session, table: DataLakeTable) -> dict:
     catalog = db.get(DataLakeCatalog, schema.catalog_id) if schema else None
     full = f"{schema.schema_name}.{table.table_name}" if schema else table.table_name
     d = {c.name: getattr(table, c.name) for c in table.__table__.columns}
+    # Última partição (mais recente por data de modificação, depois pelo path).
+    latest = db.scalar(
+        select(DataLakePartition).where(DataLakePartition.table_id == table.id)
+        .order_by(DataLakePartition.last_modified_at.desc().nullslast(),
+                  DataLakePartition.partition_path.desc())
+        .limit(1)
+    )
+    latest_partition = None
+    if latest:
+        latest_partition = {
+            "path": latest.partition_path, "files_count": latest.files_count,
+            "total_size_bytes": latest.total_size_bytes, "last_modified_at": latest.last_modified_at,
+        }
     d.update({
         "schema_name": schema.schema_name if schema else None,
         "layer_name": schema.layer_name if schema else None,
         "full_name": full,
         "connection_id": catalog.connection_id if catalog else None,
+        "connection_name": (db.scalar(select(Connection.name).where(Connection.id == catalog.connection_id)) if catalog else None),
         "bucket_name": schema.bucket_name if schema else None,
+        "base_prefix": schema.base_prefix if schema else None,
+        "last_catalog_scan_at": catalog.last_scan_at if catalog else None,
+        "latest_partition": latest_partition,
+        # Origem operacional e qualidade: estrutura presente; preenchida quando houver metadado
+        # vinculável (sem link confiável tabela->job/DQ hoje -> nulos, UI mostra "não vinculado").
+        "last_ingestion": {"job_name": None, "pipeline_name": None, "status": None,
+                           "records_written": None, "executed_at": None},
+        "quality": {"last_status": None, "score": None, "validated_at": None},
     })
     return d
 
