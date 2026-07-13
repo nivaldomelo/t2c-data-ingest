@@ -38,6 +38,27 @@ export interface DlTree {
   catalogs: DlTreeCatalog[];
 }
 
+export interface DlLatestPartition {
+  path: string;
+  files_count: number | null;
+  total_size_bytes: number | null;
+  last_modified_at: string | null;
+}
+
+export interface DlLastIngestion {
+  job_name: string | null;
+  pipeline_name: string | null;
+  status: string | null;
+  records_written: number | null;
+  executed_at: string | null;
+}
+
+export interface DlQuality {
+  last_status: string | null;
+  score: number | null;
+  validated_at: string | null;
+}
+
 export interface DlTable {
   id: number;
   schema_id: number;
@@ -54,9 +75,42 @@ export interface DlTable {
   estimated_rows: number | null;
   last_modified_at: string | null;
   last_schema_scan_at: string | null;
+  last_catalog_scan_at: string | null;
   status: string;
   connection_id: number | null;
+  connection_name: string | null;
   bucket_name: string | null;
+  base_prefix: string | null;
+  latest_partition: DlLatestPartition | null;
+  last_ingestion: DlLastIngestion | null;
+  quality: DlQuality | null;
+}
+
+export const TABLE_STATUS: Record<string, { label: string; cls: string }> = {
+  active: { label: "Ativa", cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
+  inactive: { label: "Inativa", cls: "bg-gray-100 text-gray-600 ring-gray-200" },
+  error: { label: "Erro", cls: "bg-red-50 text-red-700 ring-red-200" },
+  scanning: { label: "Atualizando", cls: "bg-amber-50 text-amber-700 ring-amber-200" },
+  not_scanned: { label: "Não escaneada", cls: "bg-gray-100 text-gray-600 ring-gray-200" },
+};
+
+export function statusBadge(status: string | null | undefined) {
+  return TABLE_STATUS[status ?? "active"] ?? TABLE_STATUS.active;
+}
+
+/** Estado geral do catálogo, a partir de last_scan_status + last_scan_at. */
+export function catalogHealth(
+  scanStatus: string | null | undefined,
+  scanAt: string | null | undefined,
+): { label: string; cls: string } {
+  if (scanStatus === "failed") return { label: "Erro na última varredura", cls: "bg-red-50 text-red-700 ring-red-200" };
+  if (scanStatus === "running" || scanStatus === "queued")
+    return { label: "Atualizando catálogo", cls: "bg-amber-50 text-amber-700 ring-amber-200" };
+  if (!scanAt) return { label: "Nunca escaneado", cls: "bg-gray-100 text-gray-600 ring-gray-200" };
+  const ageMs = Date.now() - new Date(scanAt).getTime();
+  if (ageMs > 7 * 24 * 3600 * 1000)
+    return { label: "Catálogo desatualizado", cls: "bg-amber-50 text-amber-700 ring-amber-200" };
+  return { label: "Catálogo atualizado", cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" };
 }
 
 export interface DlColumn {

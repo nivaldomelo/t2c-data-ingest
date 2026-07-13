@@ -82,6 +82,27 @@ class PartitionOut(BaseModel):
     last_modified_at: datetime | None = None
 
 
+class LatestPartitionOut(BaseModel):
+    path: str
+    files_count: int | None = None
+    total_size_bytes: int | None = None
+    last_modified_at: datetime | None = None
+
+
+class LastIngestionOut(BaseModel):
+    job_name: str | None = None
+    pipeline_name: str | None = None
+    status: str | None = None
+    records_written: int | None = None
+    executed_at: datetime | None = None
+
+
+class TableQualityOut(BaseModel):
+    last_status: str | None = None
+    score: float | None = None
+    validated_at: datetime | None = None
+
+
 class TableOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -99,9 +120,15 @@ class TableOut(BaseModel):
     estimated_rows: int | None = None
     last_modified_at: datetime | None = None
     last_schema_scan_at: datetime | None = None
+    last_catalog_scan_at: datetime | None = None
     status: str = "active"
     connection_id: int | None = None
+    connection_name: str | None = None
     bucket_name: str | None = None
+    base_prefix: str | None = None
+    latest_partition: LatestPartitionOut | None = None
+    last_ingestion: LastIngestionOut | None = None
+    quality: TableQualityOut | None = None
 
 
 class ScanRequest(BaseModel):

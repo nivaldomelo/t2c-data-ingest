@@ -11,6 +11,7 @@ class ConnectionBase(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     description: str | None = None
     connection_type: str
+    connection_category: str | None = None  # derivado do tipo no backend
     host: str | None = None
     port: int | None = None
     database_name: str | None = None
@@ -38,6 +39,9 @@ class ConnectionCreate(ConnectionBase):
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
     aws_session_token: str | None = None
+    # Generic type-specific secrets (API tokens, client_secret, connection strings, …), write-only.
+    # Keys are declared per connector in the registry; stored in the encrypted secrets blob.
+    secrets: dict[str, str] | None = None
 
 
 class ConnectionUpdate(BaseModel):
@@ -60,6 +64,8 @@ class ConnectionUpdate(BaseModel):
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
     aws_session_token: str | None = None
+    # Empty/omitted secret value keeps the currently stored one (per key).
+    secrets: dict[str, str] | None = None
 
     @field_validator("connection_type")
     @classmethod
@@ -79,6 +85,8 @@ class ConnectionOut(ConnectionBase):
     has_aws_access_key: bool = False
     has_aws_secret_key: bool = False
     has_aws_session_token: bool = False
+    # Which generic secret keys are stored (names only — never the values).
+    secrets_present: list[str] = []
     last_test_status: str
     last_test_message: str | None = None
     last_tested_at: datetime | None = None
@@ -99,6 +107,10 @@ class ConnectionSummary(BaseModel):
     postgres: int
     mysql: int
     s3: int = 0
+    # Contagem por categoria (database | storage | api).
+    database: int = 0
+    storage: int = 0
+    api: int = 0
     test_success: int
     test_failed: int
 

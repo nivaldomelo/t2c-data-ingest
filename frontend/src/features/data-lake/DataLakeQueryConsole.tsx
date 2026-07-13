@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertCircle, Copy, Download, Loader2, Play } from "lucide-react";
+import { AlertCircle, Copy, Download, Eraser, Loader2, Play, Wand2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { PrimaryButton } from "@/components/ui";
@@ -10,6 +10,17 @@ import type { DlQueryHistoryItem, DlQueryResult } from "@/features/data-lake/typ
 import { QUERY_ACTIVE, fmtDate } from "@/features/data-lake/types";
 
 const LIMITS = [10, 50, 100, 500, 1000];
+
+// Formatação leve: quebra linha antes das cláusulas principais e maiúsculas nas palavras-chave.
+function formatSql(sql: string): string {
+  const clauses = ["from", "where", "group by", "order by", "having", "limit", "left join", "inner join", "join", "union"];
+  let out = sql.replace(/\s+/g, " ").trim();
+  for (const c of clauses) {
+    out = out.replace(new RegExp(`\\s+${c}\\s+`, "gi"), `\n${c.toUpperCase()} `);
+  }
+  out = out.replace(/^\s*select\s+/i, "SELECT ");
+  return out;
+}
 
 export function DataLakeQueryConsole({
   connectionId,
@@ -67,7 +78,7 @@ export function DataLakeQueryConsole({
           placeholder="SELECT * FROM bronze.clientes LIMIT 100"
         />
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-3 py-2">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <span>Limite</span>
             <select
               value={limit}
@@ -76,7 +87,20 @@ export function DataLakeQueryConsole({
             >
               {LIMITS.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
-            <span className="text-slate-500">somente leitura · máx 1000</span>
+            <span className="text-slate-500">timeout 60s · somente leitura · máx 1000</span>
+            <span className="mx-1 h-4 w-px bg-white/10" />
+            <button onClick={() => setSql(formatSql(sql))} title="Formatar SQL"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-slate-300 hover:bg-white/10">
+              <Wand2 size={13} /> Formatar
+            </button>
+            <button onClick={() => setSql("")} title="Limpar"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-slate-300 hover:bg-white/10">
+              <Eraser size={13} /> Limpar
+            </button>
+            <button onClick={() => navigator.clipboard.writeText(sql)} title="Copiar SQL"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-slate-300 hover:bg-white/10">
+              <Copy size={13} /> Copiar
+            </button>
           </div>
           <PrimaryButton
             icon={running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}

@@ -39,6 +39,11 @@ def test_connection(conn: Connection) -> tuple[bool, str]:
         return _test_postgres(conn, host, password)
     if conn.connection_type == "mysql":
         return _test_mysql(conn, host, password)
+    # New connectors (SQL Server, Oracle, MariaDB, MongoDB, REST API, Jira, Mixpanel, Blip).
+    from t2c_ingest.features.connections.connector_tests import DISPATCH
+    fn = DISPATCH.get(conn.connection_type)
+    if fn:
+        return fn(conn)
     return False, f"Tipo de conexão não suportado: {conn.connection_type}"
 
 
