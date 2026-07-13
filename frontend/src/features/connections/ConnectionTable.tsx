@@ -5,11 +5,14 @@ import type { Column } from "@/components/ui";
 import { Plug } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ConnectionStatusBadge } from "@/features/connections/ConnectionStatusBadge";
-import type { Connection, S3ExtraParams } from "@/features/connections/types";
-import { TYPE_LABEL } from "@/features/connections/types";
+import type { Connection } from "@/features/connections/types";
+import { CATEGORY_LABEL, typeLabel } from "@/features/connections/types";
 
-function s3Of(c: Connection): S3ExtraParams {
-  return (c.extra_params ?? {}) as S3ExtraParams;
+function endpointOf(c: Connection): string {
+  const ep = (c.extra_params ?? {}) as Record<string, unknown>;
+  if (c.connection_category === "storage") return String(ep.bucket_name ?? "—");
+  if (c.connection_category === "api") return String(ep.base_url ?? "—");
+  return c.host ? `${c.host}${c.port ? `:${c.port}` : ""}` : "—";
 }
 
 function RwChips({ c }: { c: Connection }) {
@@ -92,37 +95,28 @@ export function ConnectionTable({
       ),
     },
     {
+      key: "category",
+      header: "Categoria",
+      render: (c) => (
+        <span className="text-xs text-gray-500">{CATEGORY_LABEL[c.connection_category ?? "database"]}</span>
+      ),
+    },
+    {
       key: "type",
       header: "Tipo",
       render: (c) => (
         <span className="whitespace-nowrap">
           <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-            {TYPE_LABEL[c.connection_type]}
+            {typeLabel(c.connection_type)}
           </span>
-          {c.connection_type === "s3" && <RwChips c={c} />}
+          <RwChips c={c} />
         </span>
       ),
     },
     {
-      key: "host",
-      header: "Host / Bucket",
-      render: (c) =>
-        c.connection_type === "s3" ? (
-          <span className="font-mono text-xs text-gray-600">{s3Of(c).bucket_name ?? "—"}</span>
-        ) : (
-          <span className="font-mono text-xs text-gray-600">{c.host ?? "—"}</span>
-        ),
-    },
-    { key: "port", header: "Porta", align: "center", render: (c) => <span className="tabular-nums text-gray-600">{c.connection_type === "s3" ? "—" : c.port ?? "—"}</span> },
-    {
-      key: "db",
-      header: "Banco / Região",
-      render: (c) => <span className="text-gray-600">{c.connection_type === "s3" ? s3Of(c).aws_region ?? "—" : c.database_name ?? "—"}</span>,
-    },
-    {
-      key: "schema",
-      header: "Schema / Prefixo",
-      render: (c) => <span className="text-gray-600">{c.connection_type === "s3" ? s3Of(c).base_prefix ?? "—" : c.schema_name ?? "—"}</span>,
+      key: "endpoint",
+      header: "Host / Bucket / URL",
+      render: (c) => <span className="font-mono text-xs text-gray-600">{endpointOf(c)}</span>,
     },
     { key: "test", header: "Último teste", render: (c) => <ConnectionStatusBadge status={c.last_test_status} /> },
     {

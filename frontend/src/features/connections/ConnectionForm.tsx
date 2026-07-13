@@ -32,14 +32,16 @@ export interface ConnectionSubmitPayload {
   aws_access_key_id?: string;
   aws_secret_access_key?: string;
   aws_session_token?: string;
+  // Generic type-specific secrets (API tokens, client_secret, …), write-only.
+  secrets?: Record<string, string>;
 }
 
 function s3Extra(c: Connection | null): S3ExtraParams {
   return (c?.extra_params ?? {}) as S3ExtraParams;
 }
 
-function toValues(c: Connection | null): ConnectionFormValues {
-  const type = c?.connection_type ?? "postgres";
+function toValues(c: Connection | null, forced?: string): ConnectionFormValues {
+  const type = c?.connection_type ?? forced ?? "postgres";
   const ep = s3Extra(c);
   return {
     name: c?.name ?? "",
@@ -81,18 +83,20 @@ const sectionTitle = "text-xs font-semibold uppercase tracking-wide text-gray-40
 
 export function ConnectionForm({
   initial,
+  forcedType,
   saving,
   testResult,
   onSubmit,
   onCancel,
 }: {
   initial: Connection | null;
+  forcedType?: string;
   saving?: boolean;
   testResult?: ConnectionTestResult | null;
   onSubmit: (payload: ConnectionSubmitPayload, testAfter: boolean) => void;
   onCancel: () => void;
 }) {
-  const [v, setV] = useState<ConnectionFormValues>(() => toValues(initial));
+  const [v, setV] = useState<ConnectionFormValues>(() => toValues(initial, forcedType));
   const [error, setError] = useState<string | null>(null);
   const isEdit = !!initial;
   const isS3 = v.connection_type === "s3";
@@ -224,14 +228,16 @@ export function ConnectionForm({
           <label className={label}>Descrição</label>
           <input className={field} value={v.description} onChange={(e) => set("description", e.target.value)} placeholder="Para que serve esta conexão" />
         </div>
-        <div className={isS3 ? "sm:col-span-2" : ""}>
-          <label className={label}>Tipo *</label>
-          <select className={field} value={v.connection_type} onChange={(e) => changeType(e.target.value as ConnectionType)}>
-            <option value="postgres">PostgreSQL</option>
-            <option value="mysql">MySQL</option>
-            <option value="s3">AWS S3 / Data Lake</option>
-          </select>
-        </div>
+        {!forcedType && (
+          <div className={isS3 ? "sm:col-span-2" : ""}>
+            <label className={label}>Tipo *</label>
+            <select className={field} value={v.connection_type} onChange={(e) => changeType(e.target.value as ConnectionType)}>
+              <option value="postgres">PostgreSQL</option>
+              <option value="mysql">MySQL</option>
+              <option value="s3">AWS S3 / Data Lake</option>
+            </select>
+          </div>
+        )}
 
         {!isS3 && (
           <>

@@ -1,12 +1,46 @@
-export type ConnectionType = "postgres" | "mysql" | "s3";
+export type ConnectionType = string;
+export type ConnectionCategory = "database" | "storage" | "api";
 export type TestStatus = "success" | "failed" | "not_tested";
 export type S3AuthMode = "access_key" | "iam_role" | "instance_profile" | "environment";
+
+/** Metadados de um campo do conector (registry backend /connections/types). */
+export interface ConnectorField {
+  name: string;
+  label: string;
+  kind: "text" | "number" | "password" | "select" | "checkbox" | "textarea";
+  store: string; // col:X | password | aws:X | secret | extra
+  secret: boolean;
+  required: boolean;
+  placeholder: string;
+  help: string;
+  section: string;
+  options: string[];
+  default: unknown;
+  show_if: { field: string; in: string[] } | null;
+}
+
+export interface ConnectorMeta {
+  type: string;
+  category: ConnectionCategory;
+  label: string;
+  default_port: number | null;
+  description: string;
+  test_hint: string;
+  fields: ConnectorField[];
+}
+
+export const CATEGORY_LABEL: Record<ConnectionCategory, string> = {
+  database: "Bancos de dados",
+  storage: "Data Lake / Storage",
+  api: "APIs / SaaS",
+};
 
 export interface Connection {
   id: number;
   name: string;
   description: string | null;
   connection_type: ConnectionType;
+  connection_category: ConnectionCategory | null;
   host: string | null;
   port: number | null;
   database_name: string | null;
@@ -21,6 +55,7 @@ export interface Connection {
   has_aws_access_key: boolean;
   has_aws_secret_key: boolean;
   has_aws_session_token: boolean;
+  secrets_present: string[];
   last_test_status: TestStatus;
   last_test_message: string | null;
   last_tested_at: string | null;
@@ -35,6 +70,9 @@ export interface ConnectionSummary {
   postgres: number;
   mysql: number;
   s3: number;
+  database: number;
+  storage: number;
+  api: number;
   test_success: number;
   test_failed: number;
 }
@@ -127,17 +165,41 @@ export interface ConnectionFormValues {
   catalog_mode: string;
 }
 
-export const DEFAULT_PORTS: Record<ConnectionType, number | null> = {
+export const DEFAULT_PORTS: Record<string, number | null> = {
   postgres: 5432,
   mysql: 3306,
   s3: null,
 };
 
-export const TYPE_LABEL: Record<ConnectionType, string> = {
+const TYPE_LABELS: Record<string, string> = {
   postgres: "PostgreSQL",
   mysql: "MySQL",
+  mariadb: "MariaDB",
+  sqlserver: "SQL Server",
+  oracle: "Oracle",
+  mongodb: "MongoDB",
   s3: "AWS S3 / Data Lake",
+  rest_api: "REST API Genérica",
+  jira: "Jira",
+  mixpanel: "Mixpanel",
+  blip: "Blip",
 };
+
+// Compat: mapa direto (fallback) + resolver com o registry quando disponível.
+export const TYPE_LABEL = TYPE_LABELS;
+
+export function typeLabel(type: string, connectors?: { type: string; label: string }[]): string {
+  const fromRegistry = connectors?.find((c) => c.type === type)?.label;
+  return fromRegistry ?? TYPE_LABELS[type] ?? type;
+}
+
+export function categoryOf(type: string, connectors?: { type: string; category: string }[]): ConnectionCategory {
+  const c = connectors?.find((x) => x.type === type)?.category as ConnectionCategory | undefined;
+  if (c) return c;
+  if (["s3"].includes(type)) return "storage";
+  if (["rest_api", "jira", "mixpanel", "blip"].includes(type)) return "api";
+  return "database";
+}
 
 export const S3_AUTH_MODE_LABEL: Record<S3AuthMode, string> = {
   access_key: "Access Key (chave de acesso)",

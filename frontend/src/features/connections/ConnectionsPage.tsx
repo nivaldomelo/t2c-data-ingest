@@ -11,14 +11,21 @@ import { ConnectionSummaryCards } from "@/features/connections/ConnectionSummary
 import { ConnectionTable } from "@/features/connections/ConnectionTable";
 import { ConnectionForm } from "@/features/connections/ConnectionForm";
 import type { ConnectionSubmitPayload } from "@/features/connections/ConnectionForm";
+import { DynamicConnectionForm } from "@/features/connections/DynamicConnectionForm";
+import { ConnectionTypePicker } from "@/features/connections/ConnectionTypePicker";
 import { ConnectionStatusBadge } from "@/features/connections/ConnectionStatusBadge";
 import { S3ConnectionDetail } from "@/features/connections/S3ConnectionDetail";
+import { useConnectors } from "@/features/connections/useConnectors";
 import type {
   Connection,
   ConnectionSummary,
   ConnectionTestResult,
+  ConnectorMeta,
 } from "@/features/connections/types";
-import { TYPE_LABEL } from "@/features/connections/types";
+import { CATEGORY_LABEL, typeLabel } from "@/features/connections/types";
+
+// Formulário dedicado (rico) para estes; os demais usam o formulário dinâmico via registry.
+const NATIVE_FORM_TYPES = new Set(["postgres", "mysql", "s3"]);
 
 const selectCls =
   "h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20";
@@ -28,10 +35,13 @@ export default function ConnectionsPage() {
   const qc = useQueryClient();
 
   const [type, setType] = useState("");
+  const [category, setCategory] = useState("");
   const [status, setStatus] = useState("");
   const [active, setActive] = useState("");
   const [q, setQ] = useState("");
 
+  const connectors = useConnectors();
+  const [pickedType, setPickedType] = useState<ConnectorMeta | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Connection | null>(null);
   const [viewing, setViewing] = useState<Connection | null>(null);
@@ -46,7 +56,7 @@ export default function ConnectionsPage() {
   };
 
   const query = useMemo(() => {
-    const p = new URLSearchParams({ page: "1", page_size: "25" });
+    const p = new URLSearchParams({ page: "1", page_size: "100" });
     if (type) p.set("connection_type", type);
     if (status) p.set("last_test_status", status);
     if (active) p.set("active", active);
@@ -85,11 +95,13 @@ export default function ConnectionsPage() {
 
   function openCreate() {
     setEditing(null);
+    setPickedType(null);
     setFormTestResult(null);
     setFormOpen(true);
   }
   function openEdit(c: Connection) {
     setEditing(c);
+    setPickedType(connectors.data?.find((m) => m.type === c.connection_type) ?? null);
     setFormTestResult(null);
     setFormOpen(true);
   }
@@ -135,14 +147,17 @@ export default function ConnectionsPage() {
     }
   }
 
-  const rows = list.data?.items ?? [];
+  const rows = useMemo(() => {
+    const items = list.data?.items ?? [];
+    return category ? items.filter((r) => (r.connection_category ?? "") === category) : items;
+  }, [list.data, category]);
 
   return (
     <div>
       <PageHeader
         icon={<Plug size={22} />}
         title="Conexões"
-        description="Gerencie conexões com bancos de dados usadas por jobs e pipelines."
+        description="Gerencie conexões com bancos de dados, Data Lake, storages e APIs usadas por jobs e pipelines."
         actions={
           perms.write ? (
             <PrimaryButton icon={<Plus size={16} />} onClick={openCreate}>
@@ -165,11 +180,17 @@ export default function ConnectionsPage() {
             className="h-10 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
           />
         </div>
+        <select className={selectCls} value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="">Todas as categorias</option>
+          <option value="database">Bancos de dados</option>
+          <option value="storage">Data Lake / Storage</option>
+          <option value="api">APIs / SaaS</option>
+        </select>
         <select className={selectCls} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">Todos os tipos</option>
-          <option value="postgres">PostgreSQL</option>
-          <option value="mysql">MySQL</option>
-          <option value="s3">AWS S3 / Data Lake</option>
+          {(connectors.data ?? [])
+            .filter((m) => !category || m.category === category)
+            .map((m) => <option key={m.type} value={m.type}>{m.label}</option>)}
         </select>
         <select className={selectCls} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Qualquer teste</option>
@@ -201,17 +222,42 @@ export default function ConnectionsPage() {
       <Modal
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        title={editing ? "Editar conexão" : "Nova conexão"}
-        description="Configure e teste a conexão com o banco de dados."
+        title={editing ? "Editar conexão" : pickedType ? `Nova conexão · ${pickedType.label}` : "Nova conexão"}
+        description={
+          editing || pickedType
+            ? "Configure e teste a conexão. Segredos não são exibidos e, ao editar, campos em branco mantêm o valor atual."
+            : "Escolha o tipo de conexão."
+        }
         width="max-w-2xl"
       >
-        <ConnectionForm
-          initial={editing}
-          saving={save.isPending || test.isPending}
-          testResult={formTestResult}
-          onSubmit={handleSubmit}
-          onCancel={() => setFormOpen(false)}
-        />
+        {!editing && !pickedType ? (
+          <ConnectionTypePicker onPick={setPickedType} />
+        ) : (() => {
+          const effectiveType = editing?.connection_type ?? pickedType?.type ?? "postgres";
+          if (NATIVE_FORM_TYPES.has(effectiveType)) {
+            return (
+              <ConnectionForm
+                initial={editing}
+                forcedType={editing ? undefined : effectiveType}
+                saving={save.isPending || test.isPending}
+                testResult={formTestResult}
+                onSubmit={handleSubmit}
+                onCancel={() => setFormOpen(false)}
+              />
+            );
+          }
+          if (!pickedType) return <p className="text-sm text-gray-400">Carregando…</p>;
+          return (
+            <DynamicConnectionForm
+              meta={pickedType}
+              initial={editing}
+              saving={save.isPending || test.isPending}
+              testResult={formTestResult}
+              onSubmit={handleSubmit}
+              onCancel={() => setFormOpen(false)}
+            />
+          );
+        })()}
       </Modal>
 
       {/* Modal detalhes */}
@@ -228,16 +274,32 @@ export default function ConnectionsPage() {
         {viewing && viewing.connection_type === "s3" && <S3ConnectionDetail conn={viewing} />}
         {viewing && viewing.connection_type !== "s3" && (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            <Detail label="Tipo" value={TYPE_LABEL[viewing.connection_type]} />
+            <Detail label="Categoria" value={CATEGORY_LABEL[viewing.connection_category ?? "database"]} />
+            <Detail label="Tipo" value={typeLabel(viewing.connection_type, connectors.data)} />
             <Detail label="Último teste" value={<ConnectionStatusBadge status={viewing.last_test_status} />} />
-            <Detail label="Host" value={viewing.host ?? "—"} mono />
-            <Detail label="Porta" value={viewing.port ?? "—"} />
-            <Detail label="Banco" value={viewing.database_name ?? "—"} />
-            <Detail label="Schema" value={viewing.schema_name ?? "—"} />
-            <Detail label="Usuário" value={viewing.username ?? "—"} />
-            <Detail label="Senha" value={viewing.has_password ? "•••••••• (cadastrada)" : "não cadastrada"} />
-            <Detail label="SSL" value={viewing.ssl_enabled ? "Habilitado" : "Desabilitado"} />
             <Detail label="Ativo" value={viewing.active ? "Sim" : "Não"} />
+            {viewing.connection_category === "api" ? (
+              <div className="col-span-2">
+                <Detail label="Base URL" value={String((viewing.extra_params as Record<string, unknown> | null)?.base_url ?? "—")} mono />
+              </div>
+            ) : (
+              <>
+                <Detail label="Host" value={viewing.host ?? "—"} mono />
+                <Detail label="Porta" value={viewing.port ?? "—"} />
+                <Detail label="Banco" value={viewing.database_name ?? "—"} />
+                <Detail label="Schema" value={viewing.schema_name ?? "—"} />
+                <Detail label="Usuário" value={viewing.username ?? "—"} />
+              </>
+            )}
+            <Detail label="Permissões" value={`${viewing.can_read ? "leitura" : ""}${viewing.can_read && viewing.can_write ? " + " : ""}${viewing.can_write ? "escrita" : ""}` || "—"} />
+            <Detail
+              label="Segredos"
+              value={
+                viewing.has_password || viewing.secrets_present.length
+                  ? `•••••••• (${[viewing.has_password ? "senha" : null, ...viewing.secrets_present].filter(Boolean).join(", ")})`
+                  : "nenhum cadastrado"
+              }
+            />
             {viewing.last_test_message && (
               <div className="col-span-2">
                 <Detail label="Mensagem do teste" value={viewing.last_test_message} />
