@@ -17,3 +17,8 @@ python-multipart>=0.0.20
 boto3>=1.35.0
 # Parquet footer reading for Data Lake catalog schema inference (no Spark needed for scan)
 pyarrow>=15.0.0
+# API connectors (REST/Jira/Mixpanel/Blip) connection tests + extractions
+httpx>=0.27.0
+# DB connectors (pure-python / thin drivers; SQL Server ODBC driver is added in the runtime image)
+oracledb>=2.2.0
+pymongo>=4.8.0

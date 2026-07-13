@@ -6,14 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from t2c_ingest.core.crypto import encrypt_secret
+from t2c_ingest.core.crypto import decrypt_secrets, encrypt_secret, encrypt_secrets
 from t2c_ingest.core.db import get_db
 from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
 from t2c_ingest.features.auth_bridge import permissions as perms
-from t2c_ingest.features.connections import s3_service
+from t2c_ingest.features.connections import registry, s3_service
 from t2c_ingest.features.connections.service import test_connection
-from t2c_ingest.models.connection import DEFAULT_PORTS, Connection
+from t2c_ingest.models.connection import DEFAULT_PORTS, Connection, category_for_type
 from t2c_ingest.schemas.connection import (
     ConnectionCreate,
     ConnectionOut,
@@ -34,7 +34,21 @@ def _to_out(conn: Connection) -> ConnectionOut:
     out.has_aws_access_key = bool(conn.aws_access_key_id_encrypted)
     out.has_aws_secret_key = bool(conn.aws_secret_access_key_encrypted)
     out.has_aws_session_token = bool(conn.aws_session_token_encrypted)
+    out.secrets_present = sorted(decrypt_secrets(conn.secrets_encrypted).keys())
     return out
+
+
+def _apply_secrets(conn: Connection, payload) -> None:
+    """Merge write-only generic secrets into the encrypted blob; empty value keeps the current
+    one per key. Never stores or returns plaintext."""
+    provided = getattr(payload, "secrets", None)
+    if not provided:
+        return
+    current = decrypt_secrets(conn.secrets_encrypted)
+    for key, value in provided.items():
+        if value:  # empty keeps existing
+            current[key] = value
+    conn.secrets_encrypted = encrypt_secrets(current)
 
 
 # Map write-only AWS secret fields (create/update payload) -> encrypted columns on the model.
@@ -69,9 +83,20 @@ def summary(
         postgres=_count(Connection.connection_type == "postgres"),
         mysql=_count(Connection.connection_type == "mysql"),
         s3=_count(Connection.connection_type == "s3"),
+        database=_count(Connection.connection_category == "database"),
+        storage=_count(Connection.connection_category == "storage"),
+        api=_count(Connection.connection_category == "api"),
         test_success=_count(Connection.last_test_status == "success"),
         test_failed=_count(Connection.last_test_status == "failed"),
     )
+
+
+@router.get("/types")
+def connection_types(
+    _: CurrentUser = Depends(require_permission(perms.INGEST_CONNECTIONS_READ)),
+) -> list[dict]:
+    """Registry de conectores (metadados) que dirige o formulário dinâmico do frontend."""
+    return registry.as_json()
 
 
 @router.get("", response_model=PageOut[ConnectionOut])
@@ -120,13 +145,15 @@ def create_connection(
 ) -> ConnectionOut:
     if db.scalar(select(Connection).where(Connection.name == payload.name)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Já existe uma conexão com esse nome")
-    data = payload.model_dump(exclude={"password", *_AWS_SECRET_FIELDS})
+    data = payload.model_dump(exclude={"password", "secrets", *_AWS_SECRET_FIELDS})
     if data.get("port") is None:
         data["port"] = DEFAULT_PORTS.get(payload.connection_type)
+    data["connection_category"] = category_for_type(payload.connection_type)
     conn = Connection(**data, created_by=user.email, updated_by=user.email)
     if payload.password:
         conn.password_encrypted = encrypt_secret(payload.password)
     _apply_aws_secrets(conn, payload)
+    _apply_secrets(conn, payload)
     db.add(conn)
     db.flush()
     record_audit(db, action="ingest.connection.created", user=user, entity_type="connection", entity_id=conn.id)
@@ -157,13 +184,15 @@ def update_connection(
     conn = db.get(Connection, connection_id)
     if not conn:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conexão não encontrada")
-    data = payload.model_dump(exclude_unset=True, exclude={"password", *_AWS_SECRET_FIELDS})
+    data = payload.model_dump(exclude_unset=True, exclude={"password", "secrets", *_AWS_SECRET_FIELDS})
     for key, value in data.items():
         setattr(conn, key, value)
+    conn.connection_category = category_for_type(conn.connection_type)
     # Empty/omitted secrets keep the current ones; non-empty values replace them.
     if payload.password:
         conn.password_encrypted = encrypt_secret(payload.password)
     _apply_aws_secrets(conn, payload)
+    _apply_secrets(conn, payload)
     conn.updated_by = user.email
     record_audit(db, action="ingest.connection.updated", user=user, entity_type="connection", entity_id=conn.id)
     db.commit()

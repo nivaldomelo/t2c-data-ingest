@@ -29,6 +29,15 @@ _AWS_KV = re.compile(
     r"|fs\.s3a\.(?:access\.key|secret\.key|session\.token)"
     r")(\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|[^\s;,&]+)"
 )
+# Compound secret key names (underscore-joined defeat the \b in the generic _KV rule): API
+# tokens, client secrets, connector-specific keys.
+_SECRETS_KV = re.compile(
+    r"(?i)\b("
+    r"api_token|api_key|access_token|refresh_token|client_secret|authorization_key"
+    r"|jira_api_token|mixpanel_secret|blip_authorization_key|service_account_secret"
+    r"|connection_string"
+    r")(\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|[^\s;,&]+)"
+)
 
 
 def mask_secrets(text: str | None, extra: list[str] | None = None) -> str:
@@ -40,6 +49,7 @@ def mask_secrets(text: str | None, extra: list[str] | None = None) -> str:
     for value in sorted({v for v in (extra or []) if v and len(v) >= 3}, key=len, reverse=True):
         out = out.replace(value, _MASK)
     out = _AWS_KV.sub(lambda m: f"{m.group(1)}{m.group(2)}{_MASK}", out)
+    out = _SECRETS_KV.sub(lambda m: f"{m.group(1)}{m.group(2)}{_MASK}", out)
     out = _KV.sub(lambda m: f"{m.group(1)}{m.group(2)}{_MASK}", out)
     out = _URL_CRED.sub(lambda m: f"{m.group(1)}{_MASK}{m.group(3)}", out)
     out = _AUTH.sub(lambda m: f"{m.group(1)}{_MASK}", out)

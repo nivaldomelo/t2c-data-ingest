@@ -17,6 +17,14 @@ INGEST_CONNECTIONS_READ = "ingest:connections:read"
 INGEST_CONNECTIONS_WRITE = "ingest:connections:write"
 INGEST_CONNECTIONS_TEST = "ingest:connections:test"
 INGEST_CONNECTIONS_DELETE = "ingest:connections:delete"
+# Category-scoped connection permissions (database / storage / api) + secret writes.
+INGEST_CONNECTIONS_DATABASE_READ = "ingest:connections:database:read"
+INGEST_CONNECTIONS_DATABASE_WRITE = "ingest:connections:database:write"
+INGEST_CONNECTIONS_STORAGE_READ = "ingest:connections:storage:read"
+INGEST_CONNECTIONS_STORAGE_WRITE = "ingest:connections:storage:write"
+INGEST_CONNECTIONS_API_READ = "ingest:connections:api:read"
+INGEST_CONNECTIONS_API_WRITE = "ingest:connections:api:write"
+INGEST_CONNECTIONS_SECRETS_WRITE = "ingest:connections:secrets:write"
 # S3 / Data Lake object access via a connection.
 INGEST_S3_READ = "ingest:s3:read"
 INGEST_S3_WRITE = "ingest:s3:write"
@@ -100,6 +108,13 @@ ALL_PERMISSIONS = {
     INGEST_CONNECTIONS_WRITE,
     INGEST_CONNECTIONS_TEST,
     INGEST_CONNECTIONS_DELETE,
+    INGEST_CONNECTIONS_DATABASE_READ,
+    INGEST_CONNECTIONS_DATABASE_WRITE,
+    INGEST_CONNECTIONS_STORAGE_READ,
+    INGEST_CONNECTIONS_STORAGE_WRITE,
+    INGEST_CONNECTIONS_API_READ,
+    INGEST_CONNECTIONS_API_WRITE,
+    INGEST_CONNECTIONS_SECRETS_WRITE,
     INGEST_S3_READ,
     INGEST_S3_WRITE,
     INGEST_S3_LIST,
@@ -337,6 +352,9 @@ READ_ONLY_PERMISSIONS = frozenset({
     INGEST_CLUSTERS_READ,
     INGEST_AIRFLOW_READ,
     INGEST_CONNECTIONS_READ,
+    INGEST_CONNECTIONS_DATABASE_READ,
+    INGEST_CONNECTIONS_STORAGE_READ,
+    INGEST_CONNECTIONS_API_READ,
     INGEST_S3_READ,
     INGEST_S3_LIST,
     # Data Lake: view-only users may browse the catalog. Running a scan or a quick query

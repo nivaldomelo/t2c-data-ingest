@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -39,3 +40,23 @@ def decrypt_secret(token: str | None) -> str:
     except (InvalidToken, ValueError):
         # Key rotated or corrupted blob — treat as no usable secret rather than crashing.
         return ""
+
+
+def encrypt_secrets(values: dict[str, str]) -> str:
+    """Encrypt a dict of secret key->value into a single Fernet blob (used for API/type-specific
+    secrets like api_token, client_secret, access_token). Empty dict -> ''."""
+    if not values:
+        return ""
+    return encrypt_secret(json.dumps(values))
+
+
+def decrypt_secrets(token: str | None) -> dict[str, str]:
+    """Decrypt the secrets blob back into a dict. Never raises — returns {} on any problem."""
+    raw = decrypt_secret(token)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, TypeError):
+        return {}
