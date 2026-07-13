@@ -48,16 +48,16 @@ def main() -> int:
     spark = SparkSession.builder.appName("data-lake-query").getOrCreate()
     spark.conf.set("spark.sql.shuffle.partitions", "4")
 
-    # Register ONLY the views referenced in the SQL (avoids reading every table's footer).
+    # Register ONLY the views referenced in the SQL. Use a LAZY DDL temp view (USING parquet)
+    # instead of an eager spark.read.parquet: no footer read at registration (lighter on memory),
+    # and any real read error surfaces truthfully when the query runs — not as "view not found".
     lowered = sql.lower()
     registered = 0
     for name, path in views.items():
         if name.lower() in lowered:
-            try:
-                spark.read.parquet(path).createOrReplaceTempView(name)
-                registered += 1
-            except Exception:  # noqa: BLE001 - unreadable view; let the query fail naturally
-                pass
+            safe_path = path.replace("'", "''")
+            spark.sql(f"CREATE OR REPLACE TEMPORARY VIEW {name} USING parquet OPTIONS (path '{safe_path}')")
+            registered += 1
 
     df = spark.sql(sql)
     columns = [{"name": f.name, "type": f.dataType.simpleString()} for f in df.schema.fields]
