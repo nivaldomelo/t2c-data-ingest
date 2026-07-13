@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Boxes, CheckCircle2, Cloud, Database, FileText, HardDrive, Loader2, Plug, Plus, RefreshCw,
-  Search, Table2,
+  Table2,
 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
@@ -27,6 +27,19 @@ export default function DataLakePage() {
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [scanRunId, setScanRunId] = useState<number | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  // Explorer recolhível: aberto por padrão; recolhe ao selecionar uma tabela; expande no hover.
+  const [explorerCollapsed, setExplorerCollapsed] = useState(false);
+  const [explorerHovered, setExplorerHovered] = useState(false);
+  const [explorerPinned, setExplorerPinned] = useState(false);
+  const explorerExpanded = explorerPinned || !explorerCollapsed || explorerHovered;
+
+  function handleSelectTable(id: number) {
+    setSelectedTableId(id);
+    if (!explorerPinned) {
+      setExplorerHovered(false);
+      setExplorerCollapsed(true); // libera espaço para o painel de detalhes
+    }
+  }
 
   const connections = useQuery({
     queryKey: ["dl-connections"],
@@ -146,15 +159,6 @@ export default function DataLakePage() {
                 ))}
               </select>
             </div>
-            <div className="relative min-w-[220px] flex-1">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar tabela…"
-                className="h-10 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              />
-            </div>
           </div>
 
           {validateMsg && (
@@ -177,18 +181,31 @@ export default function DataLakePage() {
             </p>
           )}
 
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
-            <DataLakeExplorer
-              catalog={catalog}
-              loading={tree.isLoading}
-              filter={q}
-              selectedTableId={selectedTableId}
-              onSelectTable={setSelectedTableId}
-              scanned={!!catalog}
-              canScan={canScan}
-              onScan={() => connId != null && scan.mutate(connId)}
-            />
-            <div className="min-w-0">
+          <div className="mt-4 flex items-start gap-4">
+            <aside
+              onMouseEnter={() => setExplorerHovered(true)}
+              onMouseLeave={() => setExplorerHovered(false)}
+              className={cn(
+                "shrink-0 transition-[width] duration-200 ease-in-out",
+                explorerExpanded ? "w-[300px]" : "w-16"
+              )}
+            >
+              <DataLakeExplorer
+                expanded={explorerExpanded}
+                catalog={catalog}
+                loading={tree.isLoading}
+                filter={q}
+                onFilterChange={setQ}
+                selectedTableId={selectedTableId}
+                onSelectTable={handleSelectTable}
+                scanned={!!catalog}
+                canScan={canScan}
+                onScan={() => connId != null && scan.mutate(connId)}
+                pinned={explorerPinned}
+                onTogglePin={() => setExplorerPinned((p) => !p)}
+              />
+            </aside>
+            <div className="min-w-0 flex-1">
               {selectedTableId ? (
                 <DataLakeTableDetails tableId={selectedTableId} canQuery={canQuery} />
               ) : (
