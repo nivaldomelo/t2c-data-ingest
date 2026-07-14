@@ -24,6 +24,7 @@ import ExecutionsPage from "@/features/executions/ExecutionsPage";
 import ExecutionDetailPage from "@/features/executions/ExecutionDetailPage";
 import BackfillsPage from "@/features/backfill/BackfillsPage";
 import AlertsPage from "@/features/alerts/AlertsPage";
+import ObservabilityPage from "@/features/observability/ObservabilityPage";
 import AuditPage from "@/features/audit/AuditPage";
 import DataQualityPage from "@/features/data-quality/DataQualityPage";
 import AirflowPage from "@/features/airflow/AirflowPage";
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="/executions" element={<ExecutionsPage />} />
         <Route path="/executions/:id" element={<ExecutionDetailPage />} />
         <Route path="/backfills" element={<BackfillsPage />} />
+        <Route path="/observability" element={<ObservabilityPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/data-quality" element={<DataQualityPage />} />

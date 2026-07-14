@@ -96,6 +96,7 @@ const GROUPS: NavGroup[] = [
     label: "Monitoramento",
     icon: Activity,
     items: [
+      { to: "/observability", label: "Observabilidade", icon: Activity, perm: "ingest:read" },
       { to: "/alerts", label: "Alertas", icon: Bell, perm: "ingest:alerts:read" },
     ],
   },
