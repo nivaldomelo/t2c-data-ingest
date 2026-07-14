@@ -5,6 +5,7 @@ import {
   Activity,
   Bell,
   Boxes,
+  Cable,
   CalendarClock,
   ChevronRight,
   Cpu,
@@ -114,6 +115,7 @@ const GROUPS: NavGroup[] = [
     label: "Administração",
     icon: Users,
     items: [
+      { to: "/integrations", label: "Integrações (t2c_data)", icon: Cable, perm: "ingest:integrations:read" },
       { to: "/access", label: "Usuários & Acessos", icon: Users, perm: "ingest:admin" },
     ],
   },
