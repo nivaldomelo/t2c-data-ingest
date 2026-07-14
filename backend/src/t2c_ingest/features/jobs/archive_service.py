@@ -40,6 +40,19 @@ def _count_files(root: str) -> int:
     return n
 
 
+def _skipped(reason: str) -> dict:
+    """Result when there is no code to archive — the delete proceeds without archiving."""
+    return {
+        "skipped": True,
+        "skip_reason": reason,
+        "archived_code_path": None,
+        "archived_workspace_path": None,
+        "original_workspace_path": None,
+        "original_removed": False,
+        "file_count": 0,
+    }
+
+
 def _is_safely_removable(real: str) -> bool:
     """True only if ``real`` is strictly nested under an allowed root (never a root itself)."""
     roots = ws._allowed_roots()  # realpath'd allowed dirs
@@ -56,16 +69,20 @@ def archive_job_code(job: JobDefinition, *, deleted_by: str, now: datetime | Non
     """
     ts = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
 
-    # 1) Identify + validate the source workspace (raises WorkspaceError if the job has none).
+    # 1) Identify the source workspace. A job may legitimately have NO code to archive (script
+    # baked in the image, legacy job, or workspace never materialized on this host). That is not a
+    # failure — there is nothing to lose — so we SKIP archival and let the delete proceed. We only
+    # raise (and thus abort the delete) when code EXISTS but cannot be safely archived (copy/verify
+    # failures below), so real code is never lost.
     try:
         source = ws.resolve_workspace(job)
-    except ws.WorkspaceError as exc:
-        raise ArchiveError(exc.status, exc.message) from exc
+    except ws.WorkspaceError:
+        return _skipped("no_workspace")
     source = os.path.realpath(source)
+    if not os.path.isdir(source):
+        return _skipped("workspace_missing")
     if not ws._within_allowed(source):
         raise ArchiveError(403, "Workspace do job está fora dos diretórios permitidos.")
-    if not os.path.isdir(source):
-        raise ArchiveError(404, "Workspace do job não encontrado no servidor.")
 
     # 2) Build the archive destination inside the (allowed) archive dir.
     archive_base = os.path.realpath(settings.job_archive_dir)

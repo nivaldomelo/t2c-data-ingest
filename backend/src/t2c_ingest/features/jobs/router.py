@@ -581,7 +581,9 @@ def delete_job(
         db.commit()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=blocker)
 
-    # 2) Archive the code. On failure we abort the delete (nothing is lost).
+    # 2) Archive the code. Real archival failures (code exists but couldn't be copied/verified)
+    # abort the delete so nothing is lost. A job with NO code to archive is NOT a failure — the
+    # archive service returns a "skipped" result and the delete proceeds.
     now = datetime.now(timezone.utc)
     try:
         archived = archive_job_code(job, deleted_by=user.email, now=now)
@@ -591,16 +593,20 @@ def delete_job(
         db.commit()
         raise HTTPException(status_code=exc.status, detail=f"Falha ao arquivar o código do job: {exc.message}") from exc
 
-    archived_path = archived["archived_code_path"]
-    record_audit(db, action="JOB_CODE_ARCHIVED", user=user, entity_type="job", entity_id=job.id,
-                 detail={"job_name": job.name, "archived_code_path": archived_path,
-                         "file_count": archived.get("file_count"), "original_removed": archived.get("original_removed")})
-    db.add(JobCodeVersion(
-        job_id=job.id, script_path=job.script_path or "", action="archived_on_job_delete",
-        file_path=archived.get("original_workspace_path"), backup_path=archived["archived_workspace_path"],
-        changed_by=user.email, size_before_bytes=None,
-        change_summary=f"Código arquivado antes da exclusão lógica ({archived.get('file_count')} arquivos).",
-    ))
+    archived_path = archived.get("archived_code_path")
+    if archived.get("skipped"):
+        record_audit(db, action="JOB_CODE_ARCHIVE_SKIPPED", user=user, entity_type="job", entity_id=job.id,
+                     detail={"job_name": job.name, "reason": archived.get("skip_reason")})
+    else:
+        record_audit(db, action="JOB_CODE_ARCHIVED", user=user, entity_type="job", entity_id=job.id,
+                     detail={"job_name": job.name, "archived_code_path": archived_path,
+                             "file_count": archived.get("file_count"), "original_removed": archived.get("original_removed")})
+        db.add(JobCodeVersion(
+            job_id=job.id, script_path=job.script_path or "", action="archived_on_job_delete",
+            file_path=archived.get("original_workspace_path"), backup_path=archived["archived_workspace_path"],
+            changed_by=user.email, size_before_bytes=None,
+            change_summary=f"Código arquivado antes da exclusão lógica ({archived.get('file_count')} arquivos).",
+        ))
 
     # 3) Soft delete.
     job.deleted_at = now
@@ -614,7 +620,8 @@ def delete_job(
     db.commit()
     return JobDeleteResult(
         success=True,
-        message="Job excluído com sucesso. Código arquivado.",
+        message=("Job excluído com sucesso. Código arquivado." if not archived.get("skipped")
+                 else "Job excluído com sucesso. (Não havia código versionado para arquivar.)"),
         job_id=job.id,
         archived_code_path=archived_path,
     )
