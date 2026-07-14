@@ -31,6 +31,7 @@ class DestinationBase(BaseModel):
     upsert_strategy: str | None = None
     truncate_before_load: bool = False
     options: dict | None = None
+    is_template: bool = False
     active: bool = True
 
     @field_validator("destination_type")
@@ -66,6 +67,7 @@ class DestinationUpdate(BaseModel):
     upsert_strategy: str | None = None
     truncate_before_load: bool | None = None
     options: dict | None = None
+    is_template: bool | None = None
     active: bool | None = None
 
 

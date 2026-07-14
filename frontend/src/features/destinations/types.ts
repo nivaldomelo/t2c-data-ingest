@@ -26,6 +26,7 @@ export interface Destination {
   upsert_strategy: string | null;
   truncate_before_load: boolean;
   options: Record<string, unknown> | null;
+  is_template: boolean;
   active: boolean;
   last_test_status: "success" | "failed" | "not_tested";
   last_test_message: string | null;
@@ -71,6 +72,7 @@ export interface DestinationSubmit {
   destination_type: DestinationType;
   connection_id: number;
   write_mode: string;
+  is_template?: boolean;
   active: boolean;
   target_schema?: string | null;
   target_table?: string | null;

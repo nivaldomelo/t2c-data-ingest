@@ -20,6 +20,7 @@ def get_connection(db: Session, connection_id: int) -> Connection | None:
 def validate(data: dict, conn: Connection | None) -> None:
     """Valida a configuração declarativa do destino. Levanta ValueError com mensagem amigável."""
     dtype = data.get("destination_type")
+    is_template = bool(data.get("is_template"))
     if conn is None:
         raise ValueError("Conexão do destino não encontrada.")
     if dtype == "postgres":
@@ -27,14 +28,16 @@ def validate(data: dict, conn: Connection | None) -> None:
             raise ValueError("A conexão precisa ser do tipo PostgreSQL.")
         if not data.get("target_schema"):
             raise ValueError("Schema destino é obrigatório.")
-        if not data.get("target_table"):
-            raise ValueError("Tabela destino é obrigatória.")
+        # Template: a tabela vem em runtime (Controle/arg); específico exige a tabela.
+        if not is_template and not data.get("target_table"):
+            raise ValueError("Tabela destino é obrigatória (ou marque como destino template).")
         if not data.get("write_mode"):
             raise ValueError("Modo de escrita é obrigatório.")
         if data.get("write_mode") == "upsert":
             if not data.get("primary_key_columns"):
                 raise ValueError("Para upsert, informe as colunas chave.")
-            if not data.get("staging_table"):
+            # Template deriva a staging (stg_{table}) quando não informada.
+            if not is_template and not data.get("staging_table"):
                 raise ValueError("Para upsert, informe a tabela de staging.")
     elif dtype == "s3":
         if conn.connection_type != "s3":
@@ -43,8 +46,9 @@ def validate(data: dict, conn: Connection | None) -> None:
             raise ValueError("Bucket é obrigatório.")
         if not data.get("target_layer"):
             raise ValueError("Camada é obrigatória.")
-        if not (data.get("target_prefix") or data.get("target_path")):
-            raise ValueError("Prefixo ou path é obrigatório.")
+        # Template: prefixo/path é a RAIZ (a tabela é anexada em runtime) — pode ser vazio.
+        if not is_template and not (data.get("target_prefix") or data.get("target_path")):
+            raise ValueError("Prefixo ou path é obrigatório (ou marque como destino template).")
         if not data.get("file_format"):
             raise ValueError("Formato é obrigatório.")
         if not data.get("write_mode"):

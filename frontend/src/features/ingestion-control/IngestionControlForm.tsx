@@ -8,8 +8,10 @@ import { PrimaryButton, SecondaryButton } from "@/components/ui";
 import type { IngestionControl, S3DestinoConfig } from "@/features/ingestion-control/types";
 import {
   COMPRESSION_VALUES,
+  CRITICALITY_VALUES,
   DESTINO_VALUES,
   FILE_FORMAT_VALUES,
+  FREQUENCY_VALUES,
   ORIGEM_VALUES,
   S3_DESTINOS,
   STATUS_VALUES,
@@ -82,13 +84,31 @@ export function IngestionControlForm({
     // Destino configurável (DEST-1) + config S3 legada
     destination_id: initial?.destination_id != null ? String(initial.destination_id) : "",
     destino_id: initial?.destino_id ?? "",
-    target_bucket: initial?.destino_config?.target_bucket ?? "",
-    target_prefix: initial?.destino_config?.target_prefix ?? "",
-    target_layer: initial?.destino_config?.target_layer ?? "",
-    file_format: initial?.destino_config?.file_format ?? "parquet",
-    write_mode: initial?.destino_config?.write_mode ?? "append",
-    partition_columns: initial?.destino_config?.partition_columns ?? "",
-    compression: initial?.destino_config?.compression ?? "snappy",
+    // Destino S3 (first-class no controle; fallback ao destino_config legado).
+    target_bucket: initial?.target_bucket ?? initial?.destino_config?.target_bucket ?? "",
+    target_prefix: initial?.target_prefix ?? initial?.destino_config?.target_prefix ?? "",
+    target_layer: initial?.target_layer ?? initial?.destino_config?.target_layer ?? "",
+    file_format: initial?.file_format ?? initial?.destino_config?.file_format ?? "parquet",
+    write_mode: initial?.write_mode ?? initial?.destino_config?.write_mode ?? "append",
+    partition_columns: (initial?.partition_columns ?? []).join(",") || (initial?.destino_config?.partition_columns ?? ""),
+    compression: initial?.compression ?? initial?.destino_config?.compression ?? "snappy",
+    // CTRL-1: origem/destino por conexão + destino manual (banco) + SLA/owner
+    source_connection_id: initial?.source_connection_id != null ? String(initial.source_connection_id) : "",
+    source_schema: initial?.source_schema ?? "",
+    source_table: initial?.source_table ?? "",
+    source_query: initial?.source_query ?? "",
+    target_connection_id: initial?.target_connection_id != null ? String(initial.target_connection_id) : "",
+    target_schema: initial?.target_schema ?? "",
+    target_table: initial?.target_table ?? "",
+    staging_schema: initial?.staging_schema ?? "",
+    staging_table: initial?.staging_table ?? "",
+    upsert_strategy: initial?.upsert_strategy ?? "",
+    truncate_before_load: initial?.truncate_before_load ?? false,
+    owner_name: initial?.owner_name ?? "",
+    owner_email: initial?.owner_email ?? "",
+    expected_frequency: initial?.expected_frequency ?? "",
+    sla_minutes: initial?.sla_minutes != null ? String(initial.sla_minutes) : "",
+    criticality: initial?.criticality ?? "",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -146,6 +166,12 @@ export function IngestionControlForm({
       destinoConfig = Object.values(cfg).some((x) => x != null) ? cfg : null;
     }
 
+    const list = (k: string) => {
+      const arr = String(v[k] ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+      return arr.length ? arr : null;
+    };
+    const num = (k: string) => { const val = String(v[k] ?? "").trim(); return val ? Number(val) : null; };
+
     onSubmit({
       nome_tabela: String(v.nome_tabela).trim(),
       grupo: s("grupo"),
@@ -166,6 +192,31 @@ export function IngestionControlForm({
       dados_sensiveis: s("dados_sensiveis"),
       status: s("status"),
       ultima_execucao: dt("ultima_execucao"),
+      // ── CTRL-1: descrição declarativa (first-class) ──
+      source_connection_id: num("source_connection_id"),
+      source_schema: s("source_schema"),
+      source_table: s("source_table"),
+      source_query: s("source_query"),
+      target_connection_id: num("target_connection_id"),
+      target_schema: s("target_schema"),
+      target_table: s("target_table"),
+      staging_schema: s("staging_schema"),
+      staging_table: s("staging_table"),
+      upsert_strategy: s("upsert_strategy"),
+      truncate_before_load: !!v.truncate_before_load,
+      write_mode: s("write_mode"),
+      // destino S3 first-class (além do destino_config legado, para o runner/resolver)
+      target_bucket: isS3Destino ? s("target_bucket") : null,
+      target_prefix: isS3Destino ? s("target_prefix") : null,
+      target_layer: isS3Destino ? s("target_layer") : null,
+      file_format: isS3Destino ? s("file_format") : null,
+      compression: isS3Destino ? s("compression") : null,
+      partition_columns: isS3Destino ? list("partition_columns") : null,
+      owner_name: s("owner_name"),
+      owner_email: s("owner_email"),
+      expected_frequency: s("expected_frequency"),
+      sla_minutes: num("sla_minutes"),
+      criticality: s("criticality"),
     });
   }
 
@@ -205,10 +256,36 @@ export function IngestionControlForm({
               <option key={d.id} value={String(d.id)}>{d.name} · {d.destination_type} · {d.target_display}</option>
             ))}
           </select>
-          <p className={hint}>Destino real da carga (entidade Destinos). Os campos abaixo são rótulos/classificação.</p>
+          <p className={hint}>Destino real da carga (entidade Destinos). Se preenchido, tem prioridade sobre os campos manuais abaixo.</p>
         </div>
         <div>
-          <label className={label}>Origem</label>
+          <label className={label}>Conexão de origem</label>
+          <select className={field} value={String(v.source_connection_id)} onChange={(e) => set("source_connection_id", e.target.value)}>
+            <option value="">— Selecione —</option>
+            {conns.map((c) => <option key={c.id} value={String(c.id)}>{c.name} ({c.connection_type})</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={label}>Conexão de destino (manual)</label>
+          <select className={field} value={String(v.target_connection_id)} onChange={(e) => set("target_connection_id", e.target.value)}>
+            <option value="">— Selecione (ou use Destino configurável) —</option>
+            {conns.map((c) => <option key={c.id} value={String(c.id)}>{c.name} ({c.connection_type})</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={label}>Schema origem</label>
+          <input className={field} value={String(v.source_schema)} onChange={(e) => set("source_schema", e.target.value)} placeholder="ex.: massa_teste" />
+        </div>
+        <div>
+          <label className={label}>Tabela origem</label>
+          <input className={field} value={String(v.source_table)} onChange={(e) => set("source_table", e.target.value)} placeholder="ex.: eventos_status" />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={label}>Query de origem (opcional)</label>
+          <input className={field} value={String(v.source_query)} onChange={(e) => set("source_query", e.target.value)} placeholder="SELECT ... (substitui schema/tabela)" />
+        </div>
+        <div>
+          <label className={label}>Origem (rótulo)</label>
           <select className={field} value={String(v.origem)} onChange={(e) => set("origem", e.target.value)}>{opt(ORIGEM_VALUES)}</select>
         </div>
         <div>
@@ -299,6 +376,21 @@ export function IngestionControlForm({
         </Section>
       )}
 
+      {!isS3Destino && !v.destination_id && (
+        <Section title="2b · Destino banco (manual)">
+          <div><label className={label}>Schema destino</label><input className={field} value={String(v.target_schema)} onChange={(e) => set("target_schema", e.target.value)} placeholder="ex.: spark" /></div>
+          <div><label className={label}>Tabela destino</label><input className={field} value={String(v.target_table)} onChange={(e) => set("target_table", e.target.value)} placeholder="(vazio = usa nome_tabela)" /></div>
+          <div><label className={label}>Modo de escrita</label><select className={field} value={String(v.write_mode)} onChange={(e) => set("write_mode", e.target.value)}>{opt(WRITE_MODE_VALUES)}</select></div>
+          <div><label className={label}>Upsert strategy</label><input className={field} value={String(v.upsert_strategy)} onChange={(e) => set("upsert_strategy", e.target.value)} placeholder="on_conflict / merge" /></div>
+          <div><label className={label}>Schema staging</label><input className={field} value={String(v.staging_schema)} onChange={(e) => set("staging_schema", e.target.value)} /></div>
+          <div><label className={label}>Tabela staging</label><input className={field} value={String(v.staging_table)} onChange={(e) => set("staging_table", e.target.value)} placeholder="stg_..." /></div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2">
+            <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500/30" checked={!!v.truncate_before_load} onChange={(e) => set("truncate_before_load", e.target.checked)} />
+            Truncar antes de carregar
+          </label>
+        </Section>
+      )}
+
       <Section title="3 · Estratégia de ingestão">
         <div>
           <label className={label}>Tipo de ingestão</label>
@@ -326,7 +418,30 @@ export function IngestionControlForm({
         </div>
       </Section>
 
-      <Section title="4 · Segurança e sensibilidade">
+      <Section title="4 · SLA e ownership">
+        <div>
+          <label className={label}>Owner</label>
+          <input className={field} value={String(v.owner_name)} onChange={(e) => set("owner_name", e.target.value)} placeholder="ex.: Engenharia de Dados" />
+        </div>
+        <div>
+          <label className={label}>Owner e-mail</label>
+          <input className={field} value={String(v.owner_email)} onChange={(e) => set("owner_email", e.target.value)} placeholder="data@turn2c.com" />
+        </div>
+        <div>
+          <label className={label}>Frequência esperada</label>
+          <select className={field} value={String(v.expected_frequency)} onChange={(e) => set("expected_frequency", e.target.value)}>{opt(FREQUENCY_VALUES)}</select>
+        </div>
+        <div>
+          <label className={label}>SLA (minutos)</label>
+          <input type="number" min={0} className={field} value={String(v.sla_minutes)} onChange={(e) => set("sla_minutes", e.target.value)} placeholder="ex.: 60" />
+        </div>
+        <div>
+          <label className={label}>Criticidade</label>
+          <select className={field} value={String(v.criticality)} onChange={(e) => set("criticality", e.target.value)}>{opt(CRITICALITY_VALUES)}</select>
+        </div>
+      </Section>
+
+      <Section title="5 · Segurança e sensibilidade">
         <div className="sm:col-span-2">
           <label className={label}>Dados sensíveis</label>
           <input className={field} value={String(v.dados_sensiveis)} onChange={(e) => set("dados_sensiveis", e.target.value)} placeholder="cpf,email,telefone" />
@@ -334,7 +449,7 @@ export function IngestionControlForm({
         </div>
       </Section>
 
-      <Section title="5 · Execução">
+      <Section title="6 · Execução">
         <div>
           <label className={label}>Status</label>
           <select className={field} value={String(v.status)} onChange={(e) => set("status", e.target.value)}>{opt(STATUS_VALUES)}</select>

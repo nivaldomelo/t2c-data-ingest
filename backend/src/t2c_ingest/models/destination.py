@@ -52,6 +52,9 @@ class Destination(Base):
     truncate_before_load: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     options: Mapped[dict | None] = mapped_column(JSONB)
+    # Destino template: o nome da tabela / último trecho do path vem em runtime (Controle de
+    # Ingestão nome_tabela ou arg do job); suporta placeholder {table}. Um destino serve N tabelas.
+    is_template: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
 
     last_test_status: Mapped[str] = mapped_column(String(20), nullable=False, default="not_tested", server_default="not_tested")

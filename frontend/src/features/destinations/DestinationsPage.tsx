@@ -7,7 +7,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import type { Page } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { DataTable, EmptyState, MetricCard, PageHeader, PrimaryButton, SecondaryButton, StatusBadge } from "@/components/ui";
+import { CodeViewer, DataTable, EmptyState, MetricCard, PageHeader, PrimaryButton, SecondaryButton, StatusBadge } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { MetricCardSkeleton } from "@/components/ui/LoadingSkeleton";
 import { Modal } from "@/components/ui/Modal";
@@ -201,17 +201,24 @@ function IconBtn({ title, onClick, children, danger }: { title: string; onClick:
 }
 
 function DestinationDetail({ dest, canTest }: { dest: Destination; canTest: boolean }) {
-  const [tab, setTab] = useState<"resumo" | "config" | "teste">("resumo");
+  const [tab, setTab] = useState<"resumo" | "config" | "como-usar" | "teste">("resumo");
   const test = useMutation({ mutationFn: () => api.post<DestinationTestResult>(`/api/v1/destinations/${dest.id}/test`, {}) });
   const parts = (dest.partition_columns ?? []).join(", ") || "—";
+  const TABS = [
+    { id: "resumo" as const, label: "Resumo" },
+    { id: "config" as const, label: "Configuração" },
+    { id: "como-usar" as const, label: "Como usar" },
+    ...(canTest ? [{ id: "teste" as const, label: "Teste" }] : []),
+  ];
   return (
     <div>
       <div className="flex gap-1 border-b border-gray-100">
-        {(["resumo", "config", "teste"] as const).filter((t) => t !== "teste" || canTest).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={cn("-mb-px border-b-2 px-3 py-2 text-sm font-medium capitalize", tab === t ? "border-brand-500 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700")}>{t === "config" ? "Configuração" : t}</button>
+        {TABS.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className={cn("-mb-px border-b-2 px-3 py-2 text-sm font-medium", tab === t.id ? "border-brand-500 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700")}>{t.label}</button>
         ))}
       </div>
       <div className="pt-4">
+        {tab === "como-usar" && <ComoUsarTab dest={dest} />}
         {tab === "resumo" && (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <D label="Tipo" v={TYPE_LABEL[dest.destination_type]} />
@@ -263,4 +270,82 @@ function DestinationDetail({ dest, canTest }: { dest: Destination; canTest: bool
 
 function D({ label, v }: { label: string; v: React.ReactNode }) {
   return <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</dt><dd className="mt-0.5 text-gray-800">{v}</dd></div>;
+}
+
+function sub(val: string | null | undefined, table: string): string {
+  return (val ?? "").replace(/\{table\}|\{nome_tabela\}/g, table);
+}
+
+function ComoUsarTab({ dest }: { dest: Destination }) {
+  const isS3 = dest.destination_type === "s3";
+  const example = "clientes"; // tabela de exemplo p/ ilustrar um destino template
+  const tbl = dest.is_template ? example : (isS3 ? "" : dest.target_table ?? "");
+
+  // Prévia do que o runner injeta (TARGET_*), mesma lógica do resolver.
+  const env: string[] = [`TARGET_TYPE=${dest.destination_type}`, `TARGET_CONNECTION_NAME=${dest.connection_name ?? ""}`];
+  if (isS3) {
+    const base = (dest.target_prefix ?? "").replace(/^\/+|\/+$/g, "");
+    const prefix = base.includes("{table}") ? sub(base, tbl) : (dest.is_template && tbl ? `${base ? base + "/" : ""}${tbl}` : base);
+    const path = `s3a://${dest.target_bucket}/${prefix ? prefix + "/" : ""}`;
+    env.push(
+      `TARGET_BUCKET=${dest.target_bucket ?? ""}`,
+      `TARGET_PREFIX=${prefix}`,
+      `TARGET_PATH=${path}`,
+      `TARGET_LAYER=${dest.target_layer ?? ""}`,
+      `FILE_FORMAT=${dest.file_format ?? "parquet"}`,
+      `WRITE_MODE=${dest.write_mode}`,
+      ...(dest.compression ? [`COMPRESSION=${dest.compression}`] : []),
+      ...((dest.partition_columns ?? []).length ? [`PARTITION_COLUMNS=${(dest.partition_columns ?? []).join(",")}`] : []),
+    );
+  } else {
+    const table = dest.target_table ? sub(dest.target_table, tbl) : tbl;
+    const staging = dest.staging_table ? sub(dest.staging_table, tbl) : (dest.is_template && dest.write_mode === "upsert" ? `stg_${tbl}` : "");
+    env.push(
+      `TARGET_SCHEMA=${dest.target_schema ?? ""}`,
+      `TARGET_TABLE=${table}`,
+      `WRITE_MODE=${dest.write_mode}`,
+      ...((dest.primary_key_columns ?? []).length ? [`PRIMARY_KEY_COLUMNS=${(dest.primary_key_columns ?? []).join(",")}`] : []),
+      ...(staging ? [`STAGING_TABLE=${staging}`] : []),
+      ...(dest.upsert_strategy ? [`UPSERT_STRATEGY=${dest.upsert_strategy}`] : []),
+      "TARGET_HOST=…  TARGET_DB=…  TARGET_USER=…  TARGET_PASSWORD=***  (injetados da conexão)",
+    );
+  }
+
+  const refJob = dest.is_template
+    ? `# No Job: selecione este destino (destination_id=${dest.id}).\n# A tabela vem do Controle de Ingestão (nome_tabela) ou de um argumento:\n--table ${example}`
+    : `# No Job: selecione este destino (destination_id=${dest.id}). Alvo fixo — nada a informar.`;
+
+  const refControl = `-- Controle de Ingestão: aponte a linha da tabela para este destino\nnome_tabela = ${dest.is_template ? example : (dest.target_table ?? "…")}\ndestination_id = ${dest.id}`;
+
+  const py = isS3
+    ? `import os\nfrom pyspark.sql import functions as F\n\npath = os.environ["TARGET_PATH"]        # ${isS3 ? `s3a://${dest.target_bucket}/${dest.is_template ? "…/<tabela>" : ""}` : ""}\nmode = os.environ.get("WRITE_MODE", "append")\nparts = [c for c in os.environ.get("PARTITION_COLUMNS","").split(",") if c]\n\n(df.write.mode(mode).format(os.environ.get("FILE_FORMAT","parquet"))\n   .option("compression", os.environ.get("COMPRESSION","snappy"))\n   ${"" }.partitionBy(*parts).save(path))`
+    : `import os\n\nschema = os.environ["TARGET_SCHEMA"]\ntable  = os.environ["TARGET_TABLE"]       # resolvido do destino/tabela em runtime\nmode   = os.environ.get("WRITE_MODE","append")\nkeys   = os.environ.get("PRIMARY_KEY_COLUMNS","").split(",")\nstaging= os.environ.get("STAGING_TABLE")   # ex.: stg_${dest.is_template ? example : (dest.target_table ?? "tabela")}\n# grave via JDBC usando TARGET_HOST/TARGET_DB/TARGET_USER/TARGET_PASSWORD (injetados da conexão)`;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        {dest.is_template
+          ? "Destino template: reutilizável por várias tabelas. O nome da tabela vem em runtime (Controle de Ingestão ou --table); o runner injeta a config final por execução."
+          : "Destino específico: aponta para um alvo fixo. Selecione-o no Job ou no Controle de Ingestão."}
+      </p>
+      <div>
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Referenciar no Job</p>
+        <CodeViewer content={refJob} language="shell" />
+      </div>
+      <div>
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Referenciar no Controle de Ingestão</p>
+        <CodeViewer content={refControl} language="sql" />
+      </div>
+      <div>
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          Variáveis injetadas pelo runner {dest.is_template ? `(exemplo: tabela “${example}”)` : ""}
+        </p>
+        <CodeViewer content={env.join("\n")} language="shell" />
+      </div>
+      <div>
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Exemplo no job ({isS3 ? "Spark" : "Python/JDBC"})</p>
+        <CodeViewer content={py} language="python" />
+      </div>
+    </div>
+  );
 }

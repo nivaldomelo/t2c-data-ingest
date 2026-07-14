@@ -204,11 +204,12 @@ def _run_one(db, execution: Execution) -> None:
             _log(db, execution.id, seq, "ERROR", resolved.error)
             db.commit()
             return
-        # Destino declarativo (DEST-1): resolve e injeta config de escrita + credenciais (TARGET_*).
-        from t2c_ingest.features.connections.worker_support import resolve_destination
+        # Destino declarativo (DEST-1) + Controle de Ingestão declarativo (CTRL-1).
+        from t2c_ingest.features.connections.worker_support import resolve_control, resolve_destination
 
         _n0 = len(resolved.notes)
         dest_info = resolve_destination(db, job, resolved)
+        control_info = resolve_control(db, job, resolved)  # CTRL-1: origem/destino via controle
         for note in resolved.notes[_n0:]:  # log das notas novas (destino/compat)
             seq = _log(db, execution.id, seq, "INFO", note)
         if resolved.error:
@@ -224,6 +225,20 @@ def _run_one(db, execution: Execution) -> None:
             execution.destination_summary = dest_info["summary"]
             seq = _log(db, execution.id, seq, "INFO",
                        f"Destino: {dest_info['destination_type']} (id={dest_info['destination_id']})")
+        if control_info:
+            execution.control_id = control_info["control_id"]
+            execution.source_connection_id = control_info["source_connection_id"]
+            execution.target_connection_id = control_info["target_connection_id"]
+            execution.source_summary = control_info["source_summary"]
+            execution.target_summary = control_info["target_summary"]
+            if control_info.get("destination_id") and not execution.destination_id:
+                execution.destination_id = control_info["destination_id"]
+                execution.destination_type = control_info["target_summary"].get("target_type")
+                execution.destination_summary = control_info["target_summary"]
+            seq = _log(db, execution.id, seq, "INFO",
+                       f"Controle de Ingestão #{control_info['control_id']} resolvido "
+                       f"(origem {control_info['source_summary'].get('source_type')} -> "
+                       f"destino {control_info['target_summary'].get('target_type')})")
         connection_env = resolved.env
         connection_confs = resolved.spark_confs
         connection_secrets = resolved.secret_values
