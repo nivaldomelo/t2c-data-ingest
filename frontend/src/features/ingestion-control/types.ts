@@ -20,6 +20,7 @@ export interface IngestionControl {
   origem_id: string | null;
   destino_id: string | null;
   destino_config: S3DestinoConfig | null;
+  destination_id: number | null;
 }
 
 /** Configuração de destino S3 / Data Lake (sem segredos — credenciais ficam na conexão). */

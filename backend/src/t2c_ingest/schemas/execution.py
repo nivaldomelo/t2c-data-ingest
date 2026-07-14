@@ -59,6 +59,10 @@ class ExecutionOut(BaseModel):
     final_message: str | None = None
     parent_execution_id: int | None = None
     step_id: int | None = None
+    # Destino declarativo usado nesta execução (DEST-1).
+    destination_id: int | None = None
+    destination_type: str | None = None
+    destination_summary: dict | None = None
     created_at: datetime
 
 

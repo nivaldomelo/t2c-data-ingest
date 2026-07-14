@@ -25,6 +25,7 @@ class JobBase(BaseModel):
     retry_count: int = 0
     max_active_runs: int = 0
     ingestion_control_id: int | None = None
+    destination_id: int | None = None
     engine: str | None = None
     timeout_seconds: int | None = None
     is_active: bool = True
@@ -61,6 +62,7 @@ class JobUpdate(BaseModel):
     retry_count: int | None = None
     max_active_runs: int | None = None
     ingestion_control_id: int | None = None
+    destination_id: int | None = None
     engine: str | None = None
     timeout_seconds: int | None = None
     is_active: bool | None = None

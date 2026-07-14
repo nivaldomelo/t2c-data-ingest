@@ -76,11 +76,25 @@ interface Detail {
   error_trace: string | null;
   source_connection: ConnInfo | null;
   target_connection: ConnInfo | null;
+  destination_id: number | null;
+  destination_type: string | null;
+  destination_summary: Record<string, unknown> | null;
   ingest_summary: IngestSummary | null;
   records_read: number | null;
   records_written: number | null;
   runtime_parameters: { id: number; key: string; value: string | null }[];
   logs: ExecLogLine[];
+}
+
+function destTargetDisplay(summary: Record<string, unknown> | null): string {
+  const t = (summary?.target ?? {}) as Record<string, unknown>;
+  if (t.path) return String(t.path);
+  if (t.schema || t.table) return `${t.schema ?? ""}.${t.table ?? ""}`.replace(/^\.|\.$/g, "");
+  return "—";
+}
+function destWriteMode(summary: Record<string, unknown> | null): string {
+  const t = (summary?.target ?? {}) as Record<string, unknown>;
+  return String(t.write_mode ?? summary?.write_mode ?? "");
 }
 
 const JOB_TYPE_LABEL: Record<string, string> = {
@@ -237,6 +251,19 @@ export default function ExecutionDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <TimelineCard data={data} />
         <ConnectionsCard source={data.source_connection} target={data.target_connection} />
+
+        {data.destination_id && (
+          <div className="rounded-2xl border border-gray-100 bg-white p-5">
+            <h3 className="mb-3 text-sm font-semibold text-gray-900">Destino utilizado</h3>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <div><dt className="text-xs uppercase tracking-wide text-gray-400">Tipo</dt><dd className="text-gray-800">{data.destination_type ?? "—"}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wide text-gray-400">Alvo</dt><dd className="font-mono text-xs text-gray-800">{destTargetDisplay(data.destination_summary)}</dd></div>
+              {destWriteMode(data.destination_summary) && (
+                <div><dt className="text-xs uppercase tracking-wide text-gray-400">Write mode</dt><dd className="text-gray-800">{destWriteMode(data.destination_summary)}</dd></div>
+              )}
+            </dl>
+          </div>
+        )}
       </div>
 
       {/* ── Resumo da ingestão ── */}

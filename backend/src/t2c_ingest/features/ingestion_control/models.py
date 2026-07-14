@@ -52,3 +52,5 @@ class IngestionControl(ControleBase):
     # Lake (bucket/prefixo/camada/formato/write_mode/partições/compressão) num único JSONB.
     destino_id: Mapped[str | None] = mapped_column(Text)
     destino_config: Mapped[dict | None] = mapped_column(JSONB)
+    # Destino configurável (DEST-1) — referência à entidade t2c_data_ingest.destinations.
+    destination_id: Mapped[int | None] = mapped_column(Integer)
