@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, GitBranch, ListChecks, PlayCircle, Settings2, Workflow } from "lucide-react";
+import { ArrowLeft, GitBranch, ListChecks, PlayCircle, Settings2, Trash2, Workflow } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { Card, EmptyState, PrimaryButton, StatusBadge } from "@/components/ui";
+import { Card, EmptyState, PrimaryButton, SecondaryButton, StatusBadge } from "@/components/ui";
+import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/LoadingSkeleton";
 import { PipelineBuilderModal } from "@/features/pipelines/PipelineBuilderModal";
 import { PipelineExecutionsTab } from "@/features/pipelines/PipelineExecutionsTab";
@@ -120,7 +121,7 @@ export default function PipelineDetailPage() {
           <p className="text-sm text-gray-600">Os logs detalhados ficam por execução/step. Abra a aba <b>Execuções</b>, clique numa execução e depois em <b>ver logs</b> do step para abrir os logs do job correspondente.</p>
         </Card>
       )}
-      {tab === "settings" && <PipelineSettings pipeline={p} onSaved={() => qc.invalidateQueries({ queryKey: ["pipeline", pid] })} canWrite={can("ingest:pipelines:write")} />}
+      {tab === "settings" && <PipelineSettings pipeline={p} onSaved={() => qc.invalidateQueries({ queryKey: ["pipeline", pid] })} canWrite={can("ingest:pipelines:write")} canDelete={can("ingest:pipelines:delete")} />}
     </div>
   );
 }
@@ -129,25 +130,51 @@ function Info({ label, value }: { label: string; value: string }) {
   return <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</dt><dd className="mt-0.5 text-gray-800">{value}</dd></div>;
 }
 
-function PipelineSettings({ pipeline, onSaved, canWrite }: { pipeline: PipelineDetail; onSaved: () => void; canWrite: boolean }) {
+function PipelineSettings({ pipeline, onSaved, canWrite, canDelete }: { pipeline: PipelineDetail; onSaved: () => void; canWrite: boolean; canDelete: boolean }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const [name, setName] = useState(pipeline.name);
   const [description, setDescription] = useState(pipeline.description ?? "");
   const [group, setGroup] = useState(pipeline.group_name ?? "");
   const [active, setActive] = useState(pipeline.is_active);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [delError, setDelError] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: () => api.put(`/api/v1/pipelines/${pipeline.id}`, { name, description: description || null, group_name: group || null, is_active: active }),
     onSuccess: onSaved,
   });
+  const del = useMutation({
+    mutationFn: () => api.del(`/api/v1/pipelines/${pipeline.id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pipelines"] }); navigate("/pipelines"); },
+    onError: (e) => setDelError(e instanceof Error ? e.message : "Falha ao excluir"),
+  });
   const inp = "mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none";
   return (
-    <Card className="max-w-xl p-5">
-      <div className="space-y-4">
-        <div><label className="text-sm font-medium text-gray-700">Nome</label><input className={inp} value={name} onChange={(e) => setName(e.target.value)} disabled={!canWrite} /></div>
-        <div><label className="text-sm font-medium text-gray-700">Descrição</label><input className={inp} value={description} onChange={(e) => setDescription(e.target.value)} disabled={!canWrite} /></div>
-        <div><label className="text-sm font-medium text-gray-700">Grupo</label><input className={inp} value={group} onChange={(e) => setGroup(e.target.value)} disabled={!canWrite} /></div>
-        <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-brand-500" checked={active} onChange={(e) => setActive(e.target.checked)} disabled={!canWrite} /> Ativo</label>
-        {canWrite && <div className="flex justify-end"><PrimaryButton loading={save.isPending} onClick={() => save.mutate()}>Salvar</PrimaryButton></div>}
-      </div>
-    </Card>
+    <div className="max-w-xl space-y-6">
+      <Card className="p-5">
+        <div className="space-y-4">
+          <div><label className="text-sm font-medium text-gray-700">Nome</label><input className={inp} value={name} onChange={(e) => setName(e.target.value)} disabled={!canWrite} /></div>
+          <div><label className="text-sm font-medium text-gray-700">Descrição</label><input className={inp} value={description} onChange={(e) => setDescription(e.target.value)} disabled={!canWrite} /></div>
+          <div><label className="text-sm font-medium text-gray-700">Grupo</label><input className={inp} value={group} onChange={(e) => setGroup(e.target.value)} disabled={!canWrite} /></div>
+          <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-brand-500" checked={active} onChange={(e) => setActive(e.target.checked)} disabled={!canWrite} /> Ativo</label>
+          {canWrite && <div className="flex justify-end"><PrimaryButton loading={save.isPending} onClick={() => save.mutate()}>Salvar</PrimaryButton></div>}
+        </div>
+      </Card>
+
+      {canDelete && (
+        <Card className="border-red-200 p-5">
+          <h3 className="text-sm font-semibold text-red-700">Zona de perigo</h3>
+          <p className="mt-1 text-sm text-gray-600">Excluir o pipeline remove seus steps, dependências e histórico de execuções. Esta ação não pode ser desfeita.</p>
+          <div className="mt-3"><SecondaryButton icon={<Trash2 size={16} />} className="!border-red-200 !text-red-600 hover:!bg-red-50" onClick={() => { setDelError(null); setConfirmDel(true); }}>Excluir pipeline</SecondaryButton></div>
+        </Card>
+      )}
+
+      <Modal open={confirmDel} onClose={() => setConfirmDel(false)} title="Excluir pipeline"
+        footer={<><SecondaryButton onClick={() => setConfirmDel(false)}>Cancelar</SecondaryButton>
+          <PrimaryButton loading={del.isPending} onClick={() => del.mutate()} className="!bg-red-600 hover:!bg-red-700">Excluir</PrimaryButton></>}>
+        {delError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{delError}</div>}
+        <p className="text-sm text-gray-600">Tem certeza que deseja excluir o pipeline <b className="text-gray-900">{pipeline.name}</b>? Os steps, dependências e o histórico de execuções serão removidos.</p>
+      </Modal>
+    </div>
   );
 }
