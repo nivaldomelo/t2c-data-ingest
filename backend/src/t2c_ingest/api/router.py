@@ -18,6 +18,7 @@ from t2c_ingest.features.data_quality.router import router as data_quality_route
 from t2c_ingest.features.dashboard.router import router as dashboard_router
 from t2c_ingest.features.executions.router import router as executions_router
 from t2c_ingest.features.ingestion_control.router import router as ingestion_control_router
+from t2c_ingest.features.integration.router import router as integration_router
 from t2c_ingest.features.variables.router import router as variables_router
 from t2c_ingest.features.jobs.router import router as jobs_router
 from t2c_ingest.features.jobs.workspace_router import router as jobs_workspace_router
@@ -53,4 +54,5 @@ api_router.include_router(runtime_router)
 api_router.include_router(data_lake_router)
 api_router.include_router(destinations_router)
 api_router.include_router(observability_router)
+api_router.include_router(integration_router)
 api_router.include_router(airflow_router)

@@ -329,10 +329,42 @@ def run_scan(db: Session, run: DataLakeScanRun) -> None:
     db.commit()
 
 
+def _schema_hash(columns: list[dict]) -> str:
+    """Hash determinístico do schema (nome/tipo/partição de cada coluna) p/ detectar mudança."""
+    import hashlib
+    sig = ";".join(
+        f"{c.get('name')}:{c.get('spark_type') or c.get('type')}:{int(bool(c.get('is_partition')))}"
+        for c in columns
+    )
+    return hashlib.sha1(sig.encode("utf-8")).hexdigest()[:16]
+
+
+def _previous_schema_hashes(db: Session, schema_ids: list[int]) -> dict[str, str]:
+    """Hash anterior de cada tabela (chave ``schema_name.table_name``) antes do rescan, p/ SCHEMA_CHANGED."""
+    if not schema_ids:
+        return {}
+    rows = db.execute(
+        select(DataLakeSchema.schema_name, DataLakeTable.id, DataLakeTable.table_name,
+               DataLakeColumn.column_name, DataLakeColumn.spark_type, DataLakeColumn.is_partition)
+        .join(DataLakeTable, DataLakeTable.schema_id == DataLakeSchema.id)
+        .join(DataLakeColumn, DataLakeColumn.table_id == DataLakeTable.id, isouter=True)
+        .where(DataLakeSchema.id.in_(schema_ids))
+        .order_by(DataLakeTable.id, DataLakeColumn.ordinal_position)
+    ).all()
+    by_table: dict[str, list[dict]] = {}
+    for sname, _tid, tname, cname, stype, is_part in rows:
+        if cname is None:
+            continue
+        by_table.setdefault(f"{sname}.{tname}", []).append(
+            {"name": cname, "spark_type": stype, "is_partition": is_part})
+    return {full: _schema_hash(cols) for full, cols in by_table.items()}
+
+
 def _persist_scan(db: Session, catalog: DataLakeCatalog, parsed: dict) -> dict:
     """Replace the catalog's schemas/tables/columns/files/partitions with the scan result."""
     # Wipe existing catalog contents (idempotent re-scan).
     old_schemas = db.scalars(select(DataLakeSchema.id).where(DataLakeSchema.catalog_id == catalog.id)).all()
+    prev_hashes = _previous_schema_hashes(db, list(old_schemas))
     if old_schemas:
         old_tables = db.scalars(select(DataLakeTable.id).where(DataLakeTable.schema_id.in_(old_schemas))).all()
         if old_tables:
@@ -380,8 +412,29 @@ def _persist_scan(db: Session, catalog: DataLakeCatalog, parsed: dict) -> dict:
                     total_size_bytes=p.get("total_size_bytes"),
                     last_modified_at=_dt(p.get("last_modified_at")),
                 )); n_parts += 1
+            # Integração com t2c_data (ponto 16): schema/colunas descobertas (+ SCHEMA_CHANGED se o
+            # hash mudou). Idempotente por (tabela, hash): rescans idênticos não duplicam eventos.
+            _publish_schema_event(db, s, t, prev_hashes)
     db.flush()
     return {"schemas": n_schemas, "tables": n_tables, "files": n_files, "partitions": n_parts}
+
+
+def _publish_schema_event(db: Session, s: dict, t: dict, prev_hashes: dict[str, str]) -> None:
+    """Enfileira SCHEMA_DISCOVERED/COLUMNS_DISCOVERED/SCHEMA_CHANGED de uma tabela do catálogo."""
+    try:
+        from t2c_ingest.features.integration import service as integration
+        cols = t.get("columns", []) or []
+        layer = s.get("layer_name") or s.get("name")
+        full_name = f"{layer}.{t['name']}" if layer else t["name"]
+        new_hash = _schema_hash(cols)
+        integration.publish_schema_events(
+            db, table_id=full_name, table_name=t["name"], full_name=full_name, layer=layer,
+            target_type="s3", bucket=s.get("bucket", ""), path=t.get("path", ""),
+            file_format=t.get("file_format", "parquet"), columns=cols,
+            partition_columns=t.get("partition_columns"), schema_hash=new_hash,
+            previous_hash=prev_hashes.get(full_name), discovered_at=_now().isoformat())
+    except Exception as exc:  # noqa: BLE001 - integração nunca quebra o scan
+        print(f"[data_lake] schema event skipped: {exc}")
 
 
 def run_query(db: Session, row: DataLakeQueryHistory) -> None:

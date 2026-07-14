@@ -681,8 +681,12 @@ def _run_orchestration() -> bool:
             _maybe_run_retention()    # prune old rows (interval-guarded)
             try:
                 from t2c_ingest.features.integration.outbox import publish_pending
+                from t2c_ingest.features.integration.service import publish_operational_incidents
 
                 with SessionLocal() as odb:
+                    # Detecta e enfileira incidentes operacionais (SLA/zero registros/watermark
+                    # parado) — idempotente — antes de despachar a outbox no mesmo tick.
+                    publish_operational_incidents(odb)
                     publish_pending(odb)         # deliver queued t2c_data pushes (retry/alert)
             except Exception as exc:  # noqa: BLE001
                 print(f"[worker] outbox publish error: {exc}")
