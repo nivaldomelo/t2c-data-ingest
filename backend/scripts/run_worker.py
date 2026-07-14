@@ -211,6 +211,59 @@ def _parse_ts(v):
     return None
 
 
+def _naive(dt):
+    """Datetime tz-aware -> naive (UTC), para as colunas tz-naive do Controle de Ingestão."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+
+
+# execution.status -> controle.status (valores sugeridos do Controle de Ingestão).
+_CONTROL_STATUS = {"success": "SUCESSO", "failed": "ERRO", "timeout": "ERRO",
+                   "running": "EM_EXECUCAO"}
+
+
+def _mark_control_running(db, control_id: int) -> None:
+    """Marca a carga como EM_EXECUCAO no Controle de Ingestão ao iniciar. Best-effort."""
+    try:
+        from t2c_ingest.features.ingestion_control.models import IngestionControl
+
+        ctrl = db.get(IngestionControl, control_id)
+        if ctrl:
+            ctrl.status = "EM_EXECUCAO"
+            db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[worker] control 'running' update skipped: {exc}")
+
+
+def _update_control_from_execution(db, execution: Execution) -> None:
+    """Escreve de volta no Controle de Ingestão os dados desta execução: status, última execução
+    e último watermark. Só atualiza o watermark quando a execução avançou (INCREMENTAL com novos
+    dados); em falha, registra ERRO + última execução mas preserva o watermark. Best-effort."""
+    if not execution.control_id:
+        return
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        from t2c_ingest.features.ingestion_control.models import IngestionControl
+
+        ctrl = db.get(IngestionControl, execution.control_id)
+        if not ctrl:
+            return
+        st = _CONTROL_STATUS.get(execution.status)
+        if st:
+            ctrl.status = st
+        if execution.finished_at is not None:
+            ctrl.ultima_execucao = _naive(execution.finished_at)
+        if execution.watermark_after is not None:
+            ctrl.watermark_atual = _naive(execution.watermark_after)
+        ctrl.atualizado_em = _dt.now(_tz.utc).replace(tzinfo=None)
+        db.commit()
+    except Exception as exc:  # noqa: BLE001 - write-back nunca quebra o worker
+        db.rollback()
+        print(f"[worker] control write-back skipped: {exc}")
+
+
 def _run_one(db, execution: Execution) -> None:
     seq = 0
     job = db.get(JobDefinition, execution.job_id) if execution.job_id else None
@@ -271,6 +324,8 @@ def _run_one(db, execution: Execution) -> None:
                        f"Controle de Ingestão #{control_info['control_id']} resolvido "
                        f"(origem {control_info['source_summary'].get('source_type')} -> "
                        f"destino {control_info['target_summary'].get('target_type')})")
+            # Marca a carga como EM_EXECUCAO no Controle assim que inicia.
+            _mark_control_running(db, control_info["control_id"])
         connection_env = resolved.env
         connection_confs = resolved.spark_confs
         connection_secrets = resolved.secret_values
@@ -342,6 +397,7 @@ def _run_one(db, execution: Execution) -> None:
         execution.finished_at = _now()
         execution.lease_expires_at = None
         db.commit()
+        _update_control_from_execution(db, execution)  # write-back: status/última execução/watermark
         _evaluate_data_quality(db, execution)
         _emit_execution_alert(db, execution)
         _maybe_retry(db, execution)
