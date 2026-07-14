@@ -162,12 +162,21 @@ def evaluate_execution(db: Session, execution: Execution) -> DqResult | None:
 
     src, tgt = parse_connections(logs_text)
     first_result = None
+    agg_overall = "pass"
+    tables_summary = []
     for summary in summaries:
         checks, overall = _evaluate_checks(summary)
         recon = _reconcile(db, execution, summary)
         if recon:
             checks = checks + recon
-            overall = _overall(checks)
+        # Data Lake S3 (ponto 15): partição/arquivos/parquet/colunas/registros/watermark.
+        try:
+            from t2c_ingest.features.data_quality import s3_checks
+            if s3_checks.is_s3_target(db, execution, summary):
+                checks = checks + s3_checks.evaluate(db, execution, summary)
+        except Exception as exc:  # noqa: BLE001 - DQ S3 nunca quebra a execução
+            print(f"[dq] s3 checks skipped: {exc}")
+        overall = _overall(checks)
         lidos = _to_int(summary.get("lidos"))
         gravados = _to_int(summary.get("gravados"))
         result = DqResult(
@@ -179,9 +188,36 @@ def evaluate_execution(db: Session, execution: Execution) -> DqResult | None:
         )
         db.add(result)
         first_result = first_result or result
+        tables_summary.append({"table": summary.get("table"), "overall": overall})
+        if overall == "fail":
+            agg_overall = "fail"
+        elif overall == "warn" and agg_overall != "fail":
+            agg_overall = "warn"
+        _maybe_alert_dq(db, execution, summary, checks)
         _write_lineage(db, execution, summary, src, tgt, lidos, gravados)
+    # Resumo de qualidade first-class na execução (observabilidade).
+    execution.quality_summary = {"overall": agg_overall, "tables": tables_summary}
     db.commit()
     return first_result
+
+
+def _maybe_alert_dq(db: Session, execution: Execution, summary: dict, checks: list[dict]) -> None:
+    """Alerta em falha crítica de DQ (S3 sobretudo): partição/arquivo ausente, parquet ilegível,
+    coluna obrigatória faltando, full com zero registros. Best-effort."""
+    critical = [c for c in checks if c.get("status") == "fail" and c.get("severity") == "critical"]
+    if not critical:
+        return
+    try:
+        from t2c_ingest.features.alerts.service import emit
+        names = ", ".join(c["name"] for c in critical)
+        emit(db, event_type="JOB_ZERO_RECORDS" if any("RECORDS" in c["name"] for c in critical) else "JOB_FAILED",
+             severity="critical",
+             title=f"Data Quality falhou: {summary.get('table') or execution.target_name}",
+             message=(f"Checks críticos falharam em {summary.get('table')}: {names}. "
+                      f"Execução #{execution.id}.")[:1000],
+             job_id=execution.job_id, execution_id=execution.id)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[dq] alert skipped: {exc}")
 
 
 def _write_lineage(db: Session, execution: Execution, summary: dict, src, tgt, lidos, gravados) -> None:

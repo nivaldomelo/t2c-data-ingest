@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -85,6 +86,19 @@ class Execution(TimestampMixin, Base):
     destination_id: Mapped[int | None] = mapped_column(Integer)
     destination_type: Mapped[str | None] = mapped_column(String(50))
     destination_summary: Mapped[dict | None] = mapped_column(JSONB)
+    # Controle de Ingestão resolvido nesta execução (CTRL-1). Colunas criadas na migração 0031;
+    # mapeadas aqui para que o worker realmente as persista.
+    control_id: Mapped[int | None] = mapped_column(Integer)
+    source_connection_id: Mapped[int | None] = mapped_column(Integer)
+    target_connection_id: Mapped[int | None] = mapped_column(Integer)
+    source_summary: Mapped[dict | None] = mapped_column(JSONB)
+    target_summary: Mapped[dict | None] = mapped_column(JSONB)
+    # Métricas first-class p/ observabilidade (pontos 14/15) — extraídas do INGEST_SUMMARY.
+    records_read: Mapped[int | None] = mapped_column(BigInteger)
+    records_written: Mapped[int | None] = mapped_column(BigInteger)
+    watermark_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    watermark_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quality_summary: Mapped[dict | None] = mapped_column(JSONB)
     # parent execution for per-step pipeline runs
     parent_execution_id: Mapped[int | None] = mapped_column(
         ForeignKey("executions.id", ondelete="CASCADE"), index=True

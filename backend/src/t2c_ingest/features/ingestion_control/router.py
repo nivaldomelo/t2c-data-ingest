@@ -68,6 +68,25 @@ def summary(
     )
 
 
+@router.get("/health")
+def health(
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_CONTROL_READ)),
+) -> list[dict]:
+    """Saúde por carga (atraso/SLA/zero-records/watermark parado/última qualidade)."""
+    from t2c_ingest.features.observability import service as obs
+    return obs.control_health(db)
+
+
+@router.get("/sla")
+def sla(
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_CONTROL_READ)),
+) -> dict:
+    from t2c_ingest.features.observability import service as obs
+    return obs.sla_report(db)
+
+
 @router.get("", response_model=PageOut[IngestionControlOut])
 def list_control(
     params: PageParams = Depends(),
