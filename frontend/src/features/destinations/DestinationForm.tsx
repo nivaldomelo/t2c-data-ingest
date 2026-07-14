@@ -34,7 +34,8 @@ export function DestinationForm({
     name: initial?.name ?? "",
     description: initial?.description ?? "",
     connection_id: initial?.connection_id ?? 0,
-    write_mode: initial?.write_mode ?? (isS3 ? "append" : "append"),
+    write_mode: initial?.write_mode ?? "append",
+    is_template: initial?.is_template ?? false,
     active: initial?.active ?? true,
     // pg
     target_schema: initial?.target_schema ?? "",
@@ -74,28 +75,28 @@ export function DestinationForm({
     const base: DestinationSubmit = {
       name: v.name.trim(), description: v.description.trim() || null,
       destination_type: type, connection_id: Number(v.connection_id),
-      write_mode: v.write_mode, active: v.active,
+      write_mode: v.write_mode, is_template: v.is_template, active: v.active,
     };
     if (isS3) {
       if (!v.target_bucket.trim()) { setLocalErr("Bucket é obrigatório."); return null; }
       if (!v.target_layer.trim()) { setLocalErr("Camada é obrigatória."); return null; }
-      if (!v.target_prefix.trim()) { setLocalErr("Prefixo/path é obrigatório."); return null; }
+      if (!v.is_template && !v.target_prefix.trim()) { setLocalErr("Prefixo/path é obrigatório (ou marque como template)."); return null; }
       Object.assign(base, {
         target_bucket: v.target_bucket.trim(),
         target_layer: v.target_layer.trim(),
-        target_prefix: v.target_prefix.trim().replace(/^\/+|\/+$/g, ""),
+        target_prefix: v.target_prefix.trim().replace(/^\/+|\/+$/g, "") || null,
         file_format: v.file_format,
         compression: v.compression,
         partition_columns: list(v.partition_columns),
       });
     } else {
       if (!v.target_schema.trim()) { setLocalErr("Schema destino é obrigatório."); return null; }
-      if (!v.target_table.trim()) { setLocalErr("Tabela destino é obrigatória."); return null; }
+      if (!v.is_template && !v.target_table.trim()) { setLocalErr("Tabela destino é obrigatória (ou marque como template)."); return null; }
       if (isUpsert && !list(v.primary_key_columns).length) { setLocalErr("Para upsert, informe as colunas chave."); return null; }
-      if (isUpsert && !v.staging_table.trim()) { setLocalErr("Para upsert, informe a tabela de staging."); return null; }
+      if (isUpsert && !v.is_template && !v.staging_table.trim()) { setLocalErr("Para upsert, informe a tabela de staging (ou marque como template)."); return null; }
       Object.assign(base, {
         target_schema: v.target_schema.trim(),
-        target_table: v.target_table.trim(),
+        target_table: v.target_table.trim() || null,
         primary_key_columns: list(v.primary_key_columns),
         staging_schema: v.staging_schema.trim() || null,
         staging_table: v.staging_table.trim() || null,
@@ -138,15 +139,30 @@ export function DestinationForm({
         </div>
       </div>
 
+      {/* Template */}
+      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500/30" checked={v.is_template} onChange={(e) => set("is_template", e.target.checked)} />
+          Destino template (reutilizável por várias tabelas)
+        </label>
+        <p className="mt-1 text-xs text-gray-500">
+          {v.is_template
+            ? (isS3
+                ? "A tabela é anexada em runtime ao prefixo (vem do Controle de Ingestão ou de --table). Use {table} no prefixo para posição customizada. Ex.: bronze/{table}."
+                : "A tabela vem em runtime (Controle de Ingestão nome_tabela ou --table). Deixe a tabela em branco ou use {table} na staging (ex.: stg_{table}). Um destino serve N tabelas.")
+            : "Destino específico: aponta para uma única tabela/prefixo fixo."}
+        </p>
+      </div>
+
       {/* Alvo */}
       <div className="border-t border-gray-100 pt-3">
-        <span className={sectionTitle}>Alvo</span>
+        <span className={sectionTitle}>{v.is_template ? "Alvo (raiz / padrão)" : "Alvo"}</span>
         <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {isS3 ? (
             <>
               <div><label className={label}>Bucket *</label><input className={field} value={v.target_bucket} onChange={(e) => set("target_bucket", e.target.value)} /></div>
               <div><label className={label}>Camada *</label><input className={field} value={v.target_layer} onChange={(e) => set("target_layer", e.target.value)} placeholder="bronze / silver / gold" /></div>
-              <div className="sm:col-span-2"><label className={label}>Prefixo / path *</label><input className={field} value={v.target_prefix} onChange={(e) => set("target_prefix", e.target.value)} placeholder="bronze/eventos_status" /></div>
+              <div className="sm:col-span-2"><label className={label}>{v.is_template ? "Prefixo base" : "Prefixo / path *"}</label><input className={field} value={v.target_prefix} onChange={(e) => set("target_prefix", e.target.value)} placeholder={v.is_template ? "bronze  (a tabela é anexada em runtime) ou bronze/{table}" : "bronze/eventos_status"} /></div>
               <div><label className={label}>Formato *</label><select className={field} value={v.file_format} onChange={(e) => set("file_format", e.target.value)}>{FILE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}</select></div>
               <div><label className={label}>Compressão</label><select className={field} value={v.compression} onChange={(e) => set("compression", e.target.value)}>{COMPRESSIONS.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
               <div className="sm:col-span-2"><label className={label}>Colunas de partição</label><input className={field} value={v.partition_columns} onChange={(e) => set("partition_columns", e.target.value)} placeholder="ano,mes,dia" /></div>
@@ -154,7 +170,7 @@ export function DestinationForm({
           ) : (
             <>
               <div><label className={label}>Schema destino *</label><input className={field} value={v.target_schema} onChange={(e) => set("target_schema", e.target.value)} placeholder="spark" /></div>
-              <div><label className={label}>Tabela destino *</label><input className={field} value={v.target_table} onChange={(e) => set("target_table", e.target.value)} placeholder="payments" /></div>
+              <div><label className={label}>{v.is_template ? "Tabela (opcional — vem do runtime)" : "Tabela destino *"}</label><input className={field} value={v.target_table} onChange={(e) => set("target_table", e.target.value)} placeholder={v.is_template ? "{table}  (do Controle / --table)" : "payments"} /></div>
             </>
           )}
           <div><label className={label}>Modo de escrita *</label><select className={field} value={v.write_mode} onChange={(e) => set("write_mode", e.target.value)}>{writeModes.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>

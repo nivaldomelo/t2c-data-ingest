@@ -159,18 +159,52 @@ def resolve_destination(db: Session, job, result: ResolvedConnections) -> dict |
         if password:
             result.secret_values.append(password)
 
+    # Destino template: descobre a tabela em runtime (arg do job ou Controle de Ingestão).
+    runtime_table = _runtime_table(db, job) if dest.is_template else None
+    if dest.is_template and not runtime_table:
+        result.notes.append(
+            f"Destino '{dest.name}' é template mas nenhuma tabela foi informada em runtime "
+            "(arg --table / --table-name ou Controle de Ingestão). O job deve fornecê-la."
+        )
+
     # Config declarativa do destino (não-secreta) + nome da conexão.
-    result.env.update(dest_resolver.target_env(dest))
+    result.env.update(dest_resolver.target_env(dest, runtime_table))
     result.env["TARGET_CONNECTION_NAME"] = conn.name
     result.notes.append(
         f"destino '{dest.name}' -> {dest.destination_type} "
-        f"({dest_resolver.target_display(dest)}, write_mode={dest.write_mode})"
+        f"({dest_resolver.target_display(dest, runtime_table)}, write_mode={dest.write_mode})"
     )
     return {
         "destination_id": dest.id,
         "destination_type": dest.destination_type,
-        "summary": dest_resolver.normalized(dest, conn),
+        "summary": dest_resolver.normalized(dest, conn, runtime_table),
     }
+
+
+def _runtime_table(db: Session, job) -> str | None:
+    """Nome da tabela em runtime para um destino template: 1) arg do job (--table/--table-name/
+    --target-table/--nome-tabela); 2) Controle de Ingestão vinculado (nome_tabela)."""
+    args = [str(a) for a in (job.arguments or [])]
+    flags = {"--table", "--table-name", "--target-table", "--nome-tabela"}
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in flags and i + 1 < len(args):
+            return args[i + 1]
+        if a.startswith("--") and "=" in a and a.split("=", 1)[0] in flags:
+            return a.split("=", 1)[1]
+        i += 1
+    ic_id = getattr(job, "ingestion_control_id", None)
+    if ic_id:
+        try:
+            from t2c_ingest.features.ingestion_control.models import IngestionControl
+            ic = db.get(IngestionControl, ic_id)
+            if ic and ic.nome_tabela:
+                # nome_tabela pode vir "schema.tabela" — usa só o último segmento para o alvo.
+                return ic.nome_tabela.split(".")[-1]
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 def _inject_s3(result: "ResolvedConnections", prefix: str, conn, *, test: bool) -> None:
