@@ -113,6 +113,95 @@ def resolve_connections(db: Session, arguments: list, *, test: bool = True) -> R
     return result
 
 
+def _inject_db_conn(result: ResolvedConnections, prefix: str, conn) -> None:
+    """Injeta credenciais de uma conexão de banco sob um prefixo (SOURCE_/TARGET_), só via env."""
+    password = decrypt_secret(conn.password_encrypted)
+    result.env.update({
+        f"{prefix}TYPE": conn.connection_type or "",
+        f"{prefix}HOST": conn.host or "",
+        f"{prefix}PORT": str(conn.port or ""),
+        f"{prefix}DB": conn.database_name or "",
+        f"{prefix}USER": conn.username or "",
+        f"{prefix}PASSWORD": password,
+        f"{prefix}SSL": "true" if conn.ssl_enabled else "false",
+        f"{prefix}SCHEMA": conn.schema_name or "",
+    })
+    if password:
+        result.secret_values.append(password)
+
+
+def _find_control(db: Session, job):
+    """Localiza o registro de controle: job.ingestion_control_id ou arg --control-id."""
+    from t2c_ingest.features.ingestion_control.models import IngestionControl
+    cid = getattr(job, "ingestion_control_id", None)
+    if not cid:
+        args = [str(a) for a in (job.arguments or [])]
+        for i, a in enumerate(args):
+            if a == "--control-id" and i + 1 < len(args):
+                cid = args[i + 1]
+                break
+            if a.startswith("--control-id="):
+                cid = a.split("=", 1)[1]
+                break
+    if not cid:
+        return None
+    try:
+        return db.get(IngestionControl, int(cid))
+    except (ValueError, TypeError):
+        return None
+
+
+def resolve_control(db: Session, job, result: ResolvedConnections) -> dict | None:
+    """CTRL-1: resolve origem+destino declarativamente a partir do Controle de Ingestão e injeta
+    SOURCE_*/TARGET_* (credenciais só via env). Retorna resumo p/ registrar na execução."""
+    from t2c_ingest.features.ingestion_control import resolvers
+    from t2c_ingest.models.connection import Connection
+
+    control = _find_control(db, job)
+    if control is None:
+        return None
+
+    src = resolvers.resolve_source(db, control)
+    tgt = resolvers.resolve_target(db, control)
+
+    if not control.source_connection_id and not (tgt.get("connection_id") or tgt.get("destination_id")):
+        result.notes.append(
+            "[WARN] Controle de ingestão não possui origem/destino declarativos completos. "
+            "Usando argumentos legados do job."
+        )
+        return None
+
+    # Credenciais + config de origem (SOURCE_*).
+    if control.source_connection_id:
+        sconn = db.get(Connection, control.source_connection_id)
+        if sconn:
+            _inject_s3(result, "SOURCE_", sconn, test=False) if sconn.connection_type == "s3" \
+                else _inject_db_conn(result, "SOURCE_", sconn)
+    result.env.update(resolvers.source_env(src))
+
+    # Credenciais + config de destino (TARGET_*).
+    tconn_id = tgt.get("connection_id")
+    if tconn_id:
+        tconn = db.get(Connection, tconn_id)
+        if tconn:
+            _inject_s3(result, "TARGET_", tconn, test=False) if tconn.connection_type == "s3" \
+                else _inject_db_conn(result, "TARGET_", tconn)
+    result.env.update(resolvers.target_env(tgt))
+
+    result.notes.append(
+        f"controle #{control.id} '{control.nome_tabela}': origem {src.get('source_type')} "
+        f"-> destino {tgt.get('target_type')} (write_mode={tgt.get('write_mode')})"
+    )
+    return {
+        "control_id": control.id,
+        "source_connection_id": control.source_connection_id,
+        "target_connection_id": tgt.get("connection_id"),
+        "destination_id": tgt.get("destination_id"),
+        "source_summary": src,
+        "target_summary": tgt,
+    }
+
+
 def resolve_destination(db: Session, job, result: ResolvedConnections) -> dict | None:
     """Resolve o destino declarativo do job (DEST-1) e injeta a config de escrita + credenciais
     da conexão sob o prefixo TARGET_. Retorna um resumo p/ registrar na execução, ou None.
@@ -146,18 +235,7 @@ def resolve_destination(db: Session, job, result: ResolvedConnections) -> dict |
     if conn.connection_type == "s3":
         _inject_s3(result, "TARGET_", conn, test=False)
     else:
-        password = decrypt_secret(conn.password_encrypted)
-        result.env.update({
-            "TARGET_TYPE": conn.connection_type or "",
-            "TARGET_HOST": conn.host or "",
-            "TARGET_PORT": str(conn.port or ""),
-            "TARGET_DB": conn.database_name or "",
-            "TARGET_USER": conn.username or "",
-            "TARGET_PASSWORD": password,
-            "TARGET_SSL": "true" if conn.ssl_enabled else "false",
-        })
-        if password:
-            result.secret_values.append(password)
+        _inject_db_conn(result, "TARGET_", conn)
 
     # Destino template: descobre a tabela em runtime (arg do job ou Controle de Ingestão).
     runtime_table = _runtime_table(db, job) if dest.is_template else None

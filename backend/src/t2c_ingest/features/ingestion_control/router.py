@@ -10,6 +10,7 @@ from t2c_ingest.core.db import get_db
 from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
 from t2c_ingest.features.auth_bridge import permissions as perms
+from t2c_ingest.features.ingestion_control import resolvers
 from t2c_ingest.features.ingestion_control.models import IngestionControl
 from t2c_ingest.features.ingestion_control.schemas import (
     IngestionControlCreate,
@@ -20,6 +21,13 @@ from t2c_ingest.features.ingestion_control.schemas import (
 from t2c_ingest.services.audit import record_audit
 
 router = APIRouter(prefix="/ingestion-control", tags=["ingestion_control"])
+
+
+def _to_out(db: Session, row: IngestionControl) -> IngestionControlOut:
+    out = IngestionControlOut.model_validate(row)
+    out.source = resolvers.resolve_source(db, row)
+    out.target = resolvers.resolve_target(db, row)
+    return out
 
 
 def _naive_now() -> datetime:
@@ -115,7 +123,7 @@ def list_control(
     rows = db.scalars(
         stmt.order_by(IngestionControl.nome_tabela).offset(params.offset).limit(params.limit)
     ).all()
-    return PageOut.build([IngestionControlOut.model_validate(r) for r in rows], total, params)
+    return PageOut.build([_to_out(db, r) for r in rows], total, params)
 
 
 @router.post("", response_model=IngestionControlOut, status_code=status.HTTP_201_CREATED)
@@ -135,7 +143,7 @@ def create_control(
                  entity_id=row.id, detail={"nome_tabela": row.nome_tabela})
     db.commit()
     db.refresh(row)
-    return IngestionControlOut.model_validate(row)
+    return _to_out(db, row)
 
 
 @router.get("/{control_id}", response_model=IngestionControlOut)
@@ -144,7 +152,18 @@ def get_control(
     db: Session = Depends(get_db),
     _: CurrentUser = Depends(require_permission(perms.INGEST_CONTROL_READ)),
 ) -> IngestionControlOut:
-    return IngestionControlOut.model_validate(_get(db, control_id))
+    return _to_out(db, _get(db, control_id))
+
+
+@router.get("/{control_id}/resolved")
+def resolved(
+    control_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_CONTROL_READ)),
+) -> dict:
+    """Origem/destino resolvidos declarativamente (sem segredos). Usado pela UI e por jobs."""
+    row = _get(db, control_id)
+    return {"source": resolvers.resolve_source(db, row), "target": resolvers.resolve_target(db, row)}
 
 
 @router.put("/{control_id}", response_model=IngestionControlOut)
@@ -163,7 +182,7 @@ def update_control(
                  entity_id=row.id, detail={"before": {"status": before.get("status"), "ativo": before.get("ativo")}})
     db.commit()
     db.refresh(row)
-    return IngestionControlOut.model_validate(row)
+    return _to_out(db, row)
 
 
 @router.delete("/{control_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -191,7 +210,7 @@ def activate(
     record_audit(db, action="INGESTION_CONTROL_ACTIVATED", user=user, entity_type="ingestion_control", entity_id=row.id)
     db.commit()
     db.refresh(row)
-    return IngestionControlOut.model_validate(row)
+    return _to_out(db, row)
 
 
 @router.post("/{control_id}/deactivate", response_model=IngestionControlOut)
@@ -206,4 +225,4 @@ def deactivate(
     record_audit(db, action="INGESTION_CONTROL_DEACTIVATED", user=user, entity_type="ingestion_control", entity_id=row.id)
     db.commit()
     db.refresh(row)
-    return IngestionControlOut.model_validate(row)
+    return _to_out(db, row)

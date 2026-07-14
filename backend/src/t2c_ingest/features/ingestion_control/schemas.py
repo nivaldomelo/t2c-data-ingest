@@ -27,6 +27,37 @@ class IngestionControlBase(BaseModel):
     destino_id: str | None = None
     destino_config: dict | None = None
     destination_id: int | None = None
+    # ── CTRL-1: descrição declarativa ──
+    source_connection_id: int | None = None
+    target_connection_id: int | None = None
+    source_database: str | None = None
+    source_schema: str | None = None
+    source_table: str | None = None
+    source_query: str | None = None
+    source_path: str | None = None
+    source_file_format: str | None = None
+    target_database: str | None = None
+    target_schema: str | None = None
+    target_table: str | None = None
+    staging_schema: str | None = None
+    staging_table: str | None = None
+    target_bucket: str | None = None
+    target_prefix: str | None = None
+    target_path: str | None = None
+    target_layer: str | None = None
+    file_format: str | None = None
+    compression: str | None = None
+    partition_columns: list[str] | None = None
+    write_mode: str | None = None
+    upsert_strategy: str | None = None
+    truncate_before_load: bool | None = False
+    expected_frequency: str | None = None
+    expected_frequency_minutes: int | None = None
+    owner_name: str | None = None
+    owner_email: str | None = None
+    sla_minutes: int | None = None
+    criticality: str | None = None
+    extra_params: dict | None = None
 
 
 class IngestionControlCreate(IngestionControlBase):
@@ -55,6 +86,36 @@ class IngestionControlUpdate(BaseModel):
     destino_id: str | None = None
     destino_config: dict | None = None
     destination_id: int | None = None
+    source_connection_id: int | None = None
+    target_connection_id: int | None = None
+    source_database: str | None = None
+    source_schema: str | None = None
+    source_table: str | None = None
+    source_query: str | None = None
+    source_path: str | None = None
+    source_file_format: str | None = None
+    target_database: str | None = None
+    target_schema: str | None = None
+    target_table: str | None = None
+    staging_schema: str | None = None
+    staging_table: str | None = None
+    target_bucket: str | None = None
+    target_prefix: str | None = None
+    target_path: str | None = None
+    target_layer: str | None = None
+    file_format: str | None = None
+    compression: str | None = None
+    partition_columns: list[str] | None = None
+    write_mode: str | None = None
+    upsert_strategy: str | None = None
+    truncate_before_load: bool | None = None
+    expected_frequency: str | None = None
+    expected_frequency_minutes: int | None = None
+    owner_name: str | None = None
+    owner_email: str | None = None
+    sla_minutes: int | None = None
+    criticality: str | None = None
+    extra_params: dict | None = None
 
 
 class IngestionControlOut(IngestionControlBase):
@@ -63,6 +124,9 @@ class IngestionControlOut(IngestionControlBase):
     id: int
     criado_em: datetime | None = None
     atualizado_em: datetime | None = None
+    # Resumos resolvidos (não-secretos) de origem/destino para a UI/API.
+    source: dict | None = None
+    target: dict | None = None
 
 
 class IngestionControlSummary(BaseModel):
