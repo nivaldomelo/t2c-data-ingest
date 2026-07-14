@@ -41,6 +41,7 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   const [singleConn, setSingleConn] = useState("");
   const [sourceConn, setSourceConn] = useState("");
   const [targetConn, setTargetConn] = useState("");
+  const [destinationId, setDestinationId] = useState("");
   const [args, setArgs] = useState<{ key: string; value: string }[]>([]);
   const [defaultParams, setDefaultParams] = useState("");
   const [timeout, setTimeoutS] = useState("");
@@ -56,6 +57,14 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   });
   const conns = connections?.items ?? [];
 
+  const { data: destinations } = useQuery({
+    queryKey: ["destinations-lite"],
+    queryFn: () => api.get<Page<{ id: number; name: string; destination_type: string; target_display: string | null }>>(
+      "/api/v1/destinations?page=1&page_size=200&active=true"),
+    enabled: open,
+  });
+  const dests = destinations?.items ?? [];
+
   const argString = useMemo(
     () => args.filter((a) => a.key.trim()).map((a) => (a.value.trim() ? `--${a.key.trim()} ${a.value.trim()}` : `--${a.key.trim()}`)).join(" "),
     [args]
@@ -69,7 +78,7 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   function reset() {
     setEngine(null); setType(""); setName(""); setDescription(""); setCreateWorkspace(true);
     setScriptPath(""); setMainClass(""); setClusterId(""); setSingleConn(""); setSourceConn("");
-    setTargetConn(""); setArgs([]); setDefaultParams(""); setTimeoutS(""); setRetry("0");
+    setTargetConn(""); setDestinationId(""); setArgs([]); setDefaultParams(""); setTimeoutS(""); setRetry("0");
     setActive(true); setTags([]); setError(null);
   }
   function close() { reset(); onClose(); }
@@ -89,6 +98,7 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
         connection_id: singleConn ? Number(singleConn) : null,
         source_connection_id: sourceConn ? Number(sourceConn) : null,
         target_connection_id: targetConn ? Number(targetConn) : null,
+        destination_id: destinationId ? Number(destinationId) : null,
         arguments: argTokens.length ? argTokens : null,
         default_parameters: defaultParams.trim() ? JSON.parse(defaultParams) : null,
         timeout_seconds: timeout.trim() ? Number(timeout) : null,
@@ -207,6 +217,16 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
             <div>
               <label className={labelCls}>Conexão única</label>
               <ConnSelect conns={conns} value={singleConn} onChange={setSingleConn} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Destino configurável</label>
+              <select className={inputCls} value={destinationId} onChange={(e) => setDestinationId(e.target.value)}>
+                <option value="">— Nenhum (usar argumentos legados) —</option>
+                {dests.map((d) => (
+                  <option key={d.id} value={String(d.id)}>{d.name} · {d.destination_type} · {d.target_display}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-400">Quando informado, o runner resolve o destino e injeta a config (TARGET_*); os argumentos de destino deixam de ser obrigatórios.</p>
             </div>
             {engine === "spark_cluster" && (
               <div>

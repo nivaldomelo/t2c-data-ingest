@@ -79,7 +79,8 @@ export function IngestionControlForm({
     dados_sensiveis: initial?.dados_sensiveis ?? "",
     status: initial?.status ?? "",
     ultima_execucao: toLocal(initial?.ultima_execucao),
-    // Destino S3 / Data Lake
+    // Destino configurável (DEST-1) + config S3 legada
+    destination_id: initial?.destination_id != null ? String(initial.destination_id) : "",
     destino_id: initial?.destino_id ?? "",
     target_bucket: initial?.destino_config?.target_bucket ?? "",
     target_prefix: initial?.destino_config?.target_prefix ?? "",
@@ -98,6 +99,14 @@ export function IngestionControlForm({
   const conns = connections.data?.items ?? [];
   const isS3Destino = S3_DESTINOS.includes(String(v.destino));
   const writableS3 = conns.filter((c) => c.connection_type === "s3" && c.can_write);
+
+  // Destinos configuráveis (DEST-1) — destino real da carga.
+  const destinations = useQuery({
+    queryKey: ["destinations-min"],
+    queryFn: () => api.get<Page<{ id: number; name: string; destination_type: string; target_display: string | null }>>(
+      "/api/v1/destinations?page=1&page_size=200&active=true"),
+  });
+  const destItems = destinations.data?.items ?? [];
 
   function set(k: string, val: string | boolean) {
     setV((p) => ({ ...p, [k]: val }));
@@ -148,6 +157,7 @@ export function IngestionControlForm({
       destino: s("destino"),
       destino_id: s("destino_id"),
       destino_config: destinoConfig,
+      destination_id: v.destination_id ? Number(v.destination_id) : null,
       tipo_ingestao: s("tipo_ingestao"),
       coluna_data: s("coluna_data"),
       coluna_ultima_alteracao: s("coluna_ultima_alteracao"),
@@ -187,12 +197,22 @@ export function IngestionControlForm({
       </Section>
 
       <Section title="2 · Origem e destino">
+        <div className="sm:col-span-2">
+          <label className={label}>Destino configurável</label>
+          <select className={field} value={String(v.destination_id)} onChange={(e) => set("destination_id", e.target.value)}>
+            <option value="">— Nenhum (usar rótulo/legado) —</option>
+            {destItems.map((d) => (
+              <option key={d.id} value={String(d.id)}>{d.name} · {d.destination_type} · {d.target_display}</option>
+            ))}
+          </select>
+          <p className={hint}>Destino real da carga (entidade Destinos). Os campos abaixo são rótulos/classificação.</p>
+        </div>
         <div>
           <label className={label}>Origem</label>
           <select className={field} value={String(v.origem)} onChange={(e) => set("origem", e.target.value)}>{opt(ORIGEM_VALUES)}</select>
         </div>
         <div>
-          <label className={label}>Destino</label>
+          <label className={label}>Destino (rótulo/camada)</label>
           <select className={field} value={String(v.destino)} onChange={(e) => set("destino", e.target.value)}>{opt(DESTINO_VALUES)}</select>
         </div>
         <div className="sm:col-span-2">

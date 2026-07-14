@@ -26,6 +26,7 @@ class IngestionControlBase(BaseModel):
     # formato/write_mode/partições/compressão). Sem segredos — credenciais ficam na conexão.
     destino_id: str | None = None
     destino_config: dict | None = None
+    destination_id: int | None = None
 
 
 class IngestionControlCreate(IngestionControlBase):
@@ -53,6 +54,7 @@ class IngestionControlUpdate(BaseModel):
     origem_id: str | None = None
     destino_id: str | None = None
     destino_config: dict | None = None
+    destination_id: int | None = None
 
 
 class IngestionControlOut(IngestionControlBase):
