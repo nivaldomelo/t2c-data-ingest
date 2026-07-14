@@ -81,6 +81,10 @@ class Execution(TimestampMixin, Base):
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     final_message: Mapped[str | None] = mapped_column(Text)
     error_trace: Mapped[str | None] = mapped_column(Text)
+    # Destino declarativo usado nesta execução (DEST-1) — registrado para rastreabilidade.
+    destination_id: Mapped[int | None] = mapped_column(Integer)
+    destination_type: Mapped[str | None] = mapped_column(String(50))
+    destination_summary: Mapped[dict | None] = mapped_column(JSONB)
     # parent execution for per-step pipeline runs
     parent_execution_id: Mapped[int | None] = mapped_column(
         ForeignKey("executions.id", ondelete="CASCADE"), index=True

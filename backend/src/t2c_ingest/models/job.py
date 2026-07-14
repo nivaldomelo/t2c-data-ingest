@@ -50,6 +50,9 @@ class JobDefinition(TimestampMixin, Base):
     max_active_runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     # Optional link to a controle.t2c_data_controle_ingestao record (cross-schema; no FK).
     ingestion_control_id: Mapped[int | None] = mapped_column(Integer)
+    # Declarative destination (DEST-1). When set, the runner resolves it and injects the target
+    # config; legacy target args become optional. No FK to keep it decoupled/soft.
+    destination_id: Mapped[int | None] = mapped_column(Integer)
     # python_worker | spark_cluster (defaults derived from type when null)
     engine: Mapped[str | None] = mapped_column(String(20))
     timeout_seconds: Mapped[int | None] = mapped_column(Integer)

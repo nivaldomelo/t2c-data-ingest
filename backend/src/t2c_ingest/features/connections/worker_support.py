@@ -113,6 +113,66 @@ def resolve_connections(db: Session, arguments: list, *, test: bool = True) -> R
     return result
 
 
+def resolve_destination(db: Session, job, result: ResolvedConnections) -> dict | None:
+    """Resolve o destino declarativo do job (DEST-1) e injeta a config de escrita + credenciais
+    da conexão sob o prefixo TARGET_. Retorna um resumo p/ registrar na execução, ou None.
+
+    Compatível: se o job não tem destination_id, apenas emite um aviso quando há args legados de
+    destino, e retorna None (o job usa os argumentos antigos)."""
+    from t2c_ingest.models.connection import Connection
+    from t2c_ingest.models.destination import Destination
+    from t2c_ingest.features.destinations import resolver as dest_resolver
+
+    dest_id = getattr(job, "destination_id", None)
+    if not dest_id:
+        refs = _extract_refs(job.arguments or [])
+        if any(p.startswith("TARGET") for p in refs):
+            result.notes.append("Destino configurável não informado. Usando argumentos legados de destino.")
+        return None
+
+    dest = db.get(Destination, dest_id)
+    if not dest or dest.deleted_at is not None:
+        result.error = f"Destino (id={dest_id}) não encontrado ou removido."
+        return None
+    conn = db.get(Connection, dest.connection_id)
+    if not conn:
+        result.error = f"Conexão do destino '{dest.name}' não encontrada."
+        return None
+    if not conn.active:
+        result.error = f"Conexão '{conn.name}' do destino '{dest.name}' está inativa."
+        return None
+
+    # Credenciais da conexão sob o prefixo TARGET_ (nunca na linha de comando).
+    if conn.connection_type == "s3":
+        _inject_s3(result, "TARGET_", conn, test=False)
+    else:
+        password = decrypt_secret(conn.password_encrypted)
+        result.env.update({
+            "TARGET_TYPE": conn.connection_type or "",
+            "TARGET_HOST": conn.host or "",
+            "TARGET_PORT": str(conn.port or ""),
+            "TARGET_DB": conn.database_name or "",
+            "TARGET_USER": conn.username or "",
+            "TARGET_PASSWORD": password,
+            "TARGET_SSL": "true" if conn.ssl_enabled else "false",
+        })
+        if password:
+            result.secret_values.append(password)
+
+    # Config declarativa do destino (não-secreta) + nome da conexão.
+    result.env.update(dest_resolver.target_env(dest))
+    result.env["TARGET_CONNECTION_NAME"] = conn.name
+    result.notes.append(
+        f"destino '{dest.name}' -> {dest.destination_type} "
+        f"({dest_resolver.target_display(dest)}, write_mode={dest.write_mode})"
+    )
+    return {
+        "destination_id": dest.id,
+        "destination_type": dest.destination_type,
+        "summary": dest_resolver.normalized(dest, conn),
+    }
+
+
 def _inject_s3(result: "ResolvedConnections", prefix: str, conn, *, test: bool) -> None:
     """Inject S3 config for a job: role-prefixed non-secret env, standard AWS_* creds (via env,
     for boto3 AND the S3A default provider chain — never on the command line), and non-secret

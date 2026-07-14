@@ -204,6 +204,26 @@ def _run_one(db, execution: Execution) -> None:
             _log(db, execution.id, seq, "ERROR", resolved.error)
             db.commit()
             return
+        # Destino declarativo (DEST-1): resolve e injeta config de escrita + credenciais (TARGET_*).
+        from t2c_ingest.features.connections.worker_support import resolve_destination
+
+        _n0 = len(resolved.notes)
+        dest_info = resolve_destination(db, job, resolved)
+        for note in resolved.notes[_n0:]:  # log das notas novas (destino/compat)
+            seq = _log(db, execution.id, seq, "INFO", note)
+        if resolved.error:
+            execution.status = "failed"
+            execution.final_message = resolved.error
+            execution.finished_at = _now()
+            _log(db, execution.id, seq, "ERROR", resolved.error)
+            db.commit()
+            return
+        if dest_info:
+            execution.destination_id = dest_info["destination_id"]
+            execution.destination_type = dest_info["destination_type"]
+            execution.destination_summary = dest_info["summary"]
+            seq = _log(db, execution.id, seq, "INFO",
+                       f"Destino: {dest_info['destination_type']} (id={dest_info['destination_id']})")
         connection_env = resolved.env
         connection_confs = resolved.spark_confs
         connection_secrets = resolved.secret_values
