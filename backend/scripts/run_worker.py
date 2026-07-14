@@ -176,7 +176,39 @@ def _capture_summary(db, execution: Execution, stdout: str) -> None:
                     execution_id=execution.id, name="ingest_summary", kind="metric", uri=summary
                 )
             )
+    # Promove métricas do INGEST_SUMMARY a colunas first-class (observabilidade, pontos 14/15).
+    _populate_execution_metrics(execution, stdout)
+
+
+def _populate_execution_metrics(execution: Execution, logs: str) -> None:
+    """Extrai records/watermark do INGEST_SUMMARY para as colunas da execução (sem re-parsear
+    logs no dashboard). Best-effort; nunca levanta exceção."""
+    try:
+        from t2c_ingest.features.executions.log_parser import parse_ingest_summary
+
+        s = parse_ingest_summary(logs or "")
+        if not s:
             return
+        if isinstance(s.get("lidos"), int):
+            execution.records_read = s["lidos"]
+        if isinstance(s.get("gravados"), int):
+            execution.records_written = s["gravados"]
+        execution.watermark_before = _parse_ts(s.get("watermark_anterior"))
+        execution.watermark_after = _parse_ts(s.get("watermark_novo"))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _parse_ts(v):
+    if not v:
+        return None
+    from datetime import datetime as _dt
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return _dt.strptime(str(v).strip()[:19], fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def _run_one(db, execution: Execution) -> None:
@@ -649,8 +681,12 @@ def _run_orchestration() -> bool:
             _maybe_run_retention()    # prune old rows (interval-guarded)
             try:
                 from t2c_ingest.features.integration.outbox import publish_pending
+                from t2c_ingest.features.integration.service import publish_operational_incidents
 
                 with SessionLocal() as odb:
+                    # Detecta e enfileira incidentes operacionais (SLA/zero registros/watermark
+                    # parado) — idempotente — antes de despachar a outbox no mesmo tick.
+                    publish_operational_incidents(odb)
                     publish_pending(odb)         # deliver queued t2c_data pushes (retry/alert)
             except Exception as exc:  # noqa: BLE001
                 print(f"[worker] outbox publish error: {exc}")

@@ -1,13 +1,11 @@
-"""Data quality evaluation + lineage push to t2c_data.
+"""Data quality evaluation + operational metadata push to t2c_data.
 
 Runs when a job execution finishes: derives checks from the worker's INGEST_SUMMARY (stored in
 `execution.final_message`) and the connection lines in the logs, records a `dq_results` row, and
-writes an operational lineage row into the reference schema (t2c_data.ingest_lineage) so the base
-product can build lineage/metadata from real ingest runs. Best-effort — never breaks the worker.
+enqueues the operational events (lineage, data quality, S3, incidents) for reliable delivery to
+t2c_data via the integration outbox (ponto 16). Best-effort — never breaks the worker.
 """
 from __future__ import annotations
-
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -162,12 +160,21 @@ def evaluate_execution(db: Session, execution: Execution) -> DqResult | None:
 
     src, tgt = parse_connections(logs_text)
     first_result = None
+    agg_overall = "pass"
+    tables_summary = []
     for summary in summaries:
         checks, overall = _evaluate_checks(summary)
         recon = _reconcile(db, execution, summary)
         if recon:
             checks = checks + recon
-            overall = _overall(checks)
+        # Data Lake S3 (ponto 15): partição/arquivos/parquet/colunas/registros/watermark.
+        try:
+            from t2c_ingest.features.data_quality import s3_checks
+            if s3_checks.is_s3_target(db, execution, summary):
+                checks = checks + s3_checks.evaluate(db, execution, summary)
+        except Exception as exc:  # noqa: BLE001 - DQ S3 nunca quebra a execução
+            print(f"[dq] s3 checks skipped: {exc}")
+        overall = _overall(checks)
         lidos = _to_int(summary.get("lidos"))
         gravados = _to_int(summary.get("gravados"))
         result = DqResult(
@@ -179,31 +186,44 @@ def evaluate_execution(db: Session, execution: Execution) -> DqResult | None:
         )
         db.add(result)
         first_result = first_result or result
-        _write_lineage(db, execution, summary, src, tgt, lidos, gravados)
+        tables_summary.append({"table": summary.get("table"), "overall": overall})
+        if overall == "fail":
+            agg_overall = "fail"
+        elif overall == "warn" and agg_overall != "fail":
+            agg_overall = "warn"
+        _maybe_alert_dq(db, execution, summary, checks)
+        # Integração com t2c_data (ponto 16): lineage (camada real) + Data Quality + S3 +
+        # incidentes, tudo via outbox transacional/idempotente. Best-effort.
+        try:
+            from t2c_ingest.features.integration import service as integration
+            integration.publish_execution_events(db, execution, summary, src, tgt, checks)
+        except Exception as exc:  # noqa: BLE001 - integração nunca quebra a avaliação de DQ
+            print(f"[dq] integration publish skipped: {exc}")
+    # Resumo de qualidade first-class na execução (observabilidade).
+    execution.quality_summary = {"overall": agg_overall, "tables": tables_summary}
     db.commit()
     return first_result
 
 
-def _write_lineage(db: Session, execution: Execution, summary: dict, src, tgt, lidos, gravados) -> None:
-    """Enqueue an operational lineage row for reliable delivery to t2c_data (via the outbox).
-
-    Written in the same transaction as the DqResult, so the lineage is never lost; the worker's
-    publisher delivers it to t2c_data with retry and alerts on persistent failure.
-    """
+def _maybe_alert_dq(db: Session, execution: Execution, summary: dict, checks: list[dict]) -> None:
+    """Alerta em falha crítica de DQ (S3 sobretudo): partição/arquivo ausente, parquet ilegível,
+    coluna obrigatória faltando, full com zero registros. Best-effort."""
+    critical = [c for c in checks if c.get("status") == "fail" and c.get("severity") == "critical"]
+    if not critical:
+        return
     try:
-        from t2c_ingest.features.integration.outbox import enqueue
+        from t2c_ingest.features.alerts.service import emit
+        names = ", ".join(c["name"] for c in critical)
+        emit(db, event_type="JOB_ZERO_RECORDS" if any("RECORDS" in c["name"] for c in critical) else "JOB_FAILED",
+             severity="critical",
+             title=f"Data Quality falhou: {summary.get('table') or execution.target_name}",
+             message=(f"Checks críticos falharam em {summary.get('table')}: {names}. "
+                      f"Execução #{execution.id}.")[:1000],
+             job_id=execution.job_id, execution_id=execution.id)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[dq] alert skipped: {exc}")
 
-        exec_at = execution.finished_at or datetime.now(timezone.utc)
-        enqueue(db, "lineage", {
-            "eid": execution.id, "jid": execution.job_id, "jname": execution.target_name,
-            "pid": execution.pipeline_id,
-            "sconn": (src or {}).get("name"), "stype": (src or {}).get("type"),
-            "tconn": (tgt or {}).get("name"), "ttype": (tgt or {}).get("type"),
-            "tsource": summary.get("table"), "ttarget": (tgt or {}).get("database"),
-            "camada": (tgt or {}).get("type"),
-            "rr": lidos, "rw": gravados, "tipo": summary.get("tipo"),
-            "status": summary.get("status"),
-            "exec_at": exec_at.isoformat(),
-        })
-    except Exception as exc:  # noqa: BLE001 - enqueue must never break the run
-        print(f"[dq] lineage enqueue skipped: {exc}")
+
+# NB: a linhagem operacional agora é publicada por integration.service.publish_execution_events
+# (ponto 16), que resolve a CAMADA real (bronze/silver/gold) — o antigo _write_lineage usava o
+# tipo da conexão como camada e foi removido.

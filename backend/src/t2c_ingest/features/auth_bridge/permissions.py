@@ -97,6 +97,10 @@ INGEST_TAGS_READ = "ingest:tags:read"
 INGEST_TAGS_WRITE = "ingest:tags:write"
 INGEST_TAGS_DELETE = "ingest:tags:delete"
 INGEST_JOBS_TAGS_WRITE = "ingest:jobs:tags:write"
+# Integração com o t2c_data (outbox de eventos operacionais — ponto 16).
+INGEST_INTEGRATIONS_READ = "ingest:integrations:read"
+INGEST_INTEGRATIONS_MANAGE = "ingest:integrations:manage"
+INGEST_INTEGRATIONS_RETRY = "ingest:integrations:retry"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -177,6 +181,9 @@ ALL_PERMISSIONS = {
     INGEST_TAGS_WRITE,
     INGEST_TAGS_DELETE,
     INGEST_JOBS_TAGS_WRITE,
+    INGEST_INTEGRATIONS_READ,
+    INGEST_INTEGRATIONS_MANAGE,
+    INGEST_INTEGRATIONS_RETRY,
 }
 
 # Mapping from t2c_data role -> ingest permissions.
@@ -384,6 +391,9 @@ READ_ONLY_PERMISSIONS = frozenset({
     INGEST_ALERTS_READ,
     INGEST_RUNTIME_READ,
     INGEST_TAGS_READ,
+    # Integração: view-only pode acompanhar o status da outbox (payloads mascarados). Reprocessar
+    # (retry/manage) continua restrito a admin.
+    INGEST_INTEGRATIONS_READ,
 })
 
 

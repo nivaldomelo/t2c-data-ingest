@@ -22,7 +22,10 @@ _TEST_RE = re.compile(r"teste\s+(?P<name>[\w.-]+):\s*(?P<result>\S+)", re.IGNORE
 # Known keys of the INGEST_SUMMARY line, in emission order. Values may contain spaces
 # (timestamps), so each value is captured lazily up to the next known key or end-of-line.
 _SUMMARY_KEYS = ("table", "tipo", "incr_col", "watermark_anterior", "watermark_novo",
-                 "lidos", "gravados", "status")
+                 "lidos", "gravados", "status",
+                 # S3 / Data Lake (pontos 14/15)
+                 "target_type", "target_path", "file_format", "partition_columns",
+                 "partition_path", "files_written", "bytes_written")
 _KEY_ALT = "|".join(_SUMMARY_KEYS)
 # Capture "<known_key>=<value>" where the value runs lazily until the next "<word>=" token
 # (any key, including unknown extras like duracao_s) or end-of-line. This keeps values that
@@ -86,7 +89,7 @@ def parse_ingest_summary(logs: str) -> dict | None:
     if not found:
         return None
 
-    for numeric in ("lidos", "gravados"):
+    for numeric in ("lidos", "gravados", "files_written", "bytes_written"):
         raw = fields.get(numeric)
         if raw is not None:
             try:
@@ -94,3 +97,4 @@ def parse_ingest_summary(logs: str) -> dict | None:
             except ValueError:
                 pass  # leave the raw value if it's truncated / not an int
     return fields
+
