@@ -29,45 +29,71 @@ def _log_masking_ok() -> bool:
         return False
 
 
-def _item(key: str, ok: bool | None, detail: str) -> dict:
-    return {"key": key, "ok": ok, "detail": detail}
+def _item(key: str, ok: bool | None, category: str, detail: str, recommendation: str | None = None) -> dict:
+    return {"key": key, "ok": ok, "category": category, "detail": detail, "recommendation": recommendation}
+
+
+# Ordem/rótulos das categorias do checklist (para agrupar no frontend).
+CATEGORIES = [
+    ("secrets", "Secrets & credenciais"),
+    ("logs", "Logs & dados"),
+    ("access", "Acesso & RBAC"),
+    ("network", "Rede & cluster"),
+    ("retention", "Retenção"),
+]
 
 
 def checklist(db: Session) -> dict:
-    """Itens do checklist de segurança (§21/§22). `ok=None` = não verificável em runtime."""
-    crypto = _crypto_ok()
+    """Itens do checklist de segurança (§21/§22), agrupados por categoria. `ok=None` = depende de
+    infra externa (não verificável pela aplicação)."""
     dedicated_key = bool((settings.connection_secret_key or "").strip())
     items = [
-        _item("secrets_encrypted", crypto,
-              "Secrets cifrados em repouso (Fernet)." + ("" if dedicated_key
-              else " Usando fallback do JWT em dev — defina CONNECTION_SECRET_KEY em produção.")),
-        _item("logs_sanitized", _log_masking_ok(),
-              "LogSanitizer (mask_secrets) aplicado no worker e no Data Lake antes de gravar logs."),
-        _item("secrets_not_in_api", True,
-              "Schemas de origem/destino retornam apenas flags de presença (has_*), nunca o valor."),
-        _item("no_cli_secrets", True,
-              "Credenciais injetadas via env no worker (docker exec -e); nunca na linha de comando do spark-submit."),
-        _item("rbac_enabled", True,
-              "require_permission no backend; admin = tudo, usuários liberados = somente leitura."),
-        _item("quick_query_read_only", True,
-              "sql_guard: allowlist SELECT/WITH/SHOW/DESCRIBE/EXPLAIN + LIMIT obrigatório; DDL/DML bloqueados."),
-        _item("spark_not_public", None,
-              "UIs/RPC do Spark ligados a 127.0.0.1 no docker-compose; em produção use rede privada/ClusterIP."),
-        _item("s3_public_access_blocked", None,
-              "Depende da política do bucket na AWS (Block Public Access). Não verificável pela aplicação."),
-        _item("audit_enabled", True, "Trilha de auditoria (audit_events) com mascaramento de detalhe."),
-        _item("workspace_guarded", True,
-              "Workspace bloqueia path traversal e extensões sensíveis (.env/.pem/.key...)."),
-        _item("retention_logs", settings.retention_execution_logs_days > 0,
-              f"Logs de execução: {settings.retention_execution_logs_days} dias."),
-        _item("retention_executions", settings.retention_executions_days > 0,
-              f"Execuções: {settings.retention_executions_days or 'sem poda (0)'} — recomendado definir em produção."),
-        _item("retention_audit", settings.retention_audit_days > 0,
-              f"Auditoria: {settings.retention_audit_days or 'sem poda (0)'} — recomendado 1 ano+."),
+        _item("secrets_encrypted", _crypto_ok(), "secrets",
+              "Senhas, tokens e chaves AWS são cifrados (Fernet) antes de ir ao banco; só o backend/worker decifra."
+              + ("" if dedicated_key else " Hoje usando a chave do JWT como fallback (dev)."),
+              None if dedicated_key else "Defina CONNECTION_SECRET_KEY dedicada em produção."),
+        _item("secrets_not_in_api", True, "secrets",
+              "Ao ler uma origem/destino, a API devolve apenas indicadores de presença (has_password…), nunca o valor."),
+        _item("no_cli_secrets", True, "secrets",
+              "O worker injeta credenciais como variáveis de ambiente no container; nunca na linha de comando do spark-submit (que apareceria em `ps`/UI)."),
+        _item("logs_sanitized", _log_masking_ok(), "logs",
+              "Todo log passa pelo LogSanitizer, que substitui senhas/tokens/chaves por ******** antes de gravar/exibir."),
+        _item("sensitive_columns_masked", True, "logs",
+              "Colunas sensíveis (Controle.dados_sensiveis + PII padrão) são mascaradas nas amostras e na Consulta rápida do Data Lake."),
+        _item("workspace_guarded", True, "logs",
+              "O editor de código bloqueia caminhos '../', extensões perigosas (.env/.pem/.key) e detecta segredos no código ao salvar."),
+        _item("rbac_enabled", True, "access",
+              "Toda ação sensível é validada no backend (require_permission): admin faz tudo; usuários liberados só leem. Não é só ocultar botão."),
+        _item("quick_query_read_only", True, "access",
+              "A Consulta rápida do Data Lake só aceita leitura (SELECT/WITH/SHOW/DESCRIBE/EXPLAIN) com LIMIT; DDL/DML são recusados."),
+        _item("audit_enabled", True, "access",
+              "Ações são registradas em audit_events (criação/edição/execução/rotação de secret…) com o detalhe mascarado."),
+        _item("spark_not_public", None, "network",
+              "As UIs/RPC do Spark estão ligadas a 127.0.0.1 no docker-compose (sem exposição externa).",
+              "Em produção, rode o Spark em rede privada/ClusterIP, sem UI pública."),
+        _item("s3_public_access_blocked", None, "network",
+              "O bucket do Data Lake deve ter Block Public Access e política restrita — isso vive na conta AWS.",
+              "Verifique na AWS: Block Public Access ativo, política restrita e IAM de mínimo privilégio."),
+        _item("retention_logs", settings.retention_execution_logs_days > 0, "retention",
+              f"Logs detalhados de execução são podados após {settings.retention_execution_logs_days} dias."),
+        _item("retention_executions",
+              settings.retention_executions_days > 0, "retention",
+              (f"Histórico de execuções podado após {settings.retention_executions_days} dias."
+               if settings.retention_executions_days > 0 else "Histórico de execuções sem poda (0)."),
+              None if settings.retention_executions_days > 0 else "Defina RETENTION_EXECUTIONS_DAYS."),
+        _item("retention_audit",
+              settings.retention_audit_days > 0, "retention",
+              (f"Auditoria retida por {settings.retention_audit_days} dias."
+               if settings.retention_audit_days > 0 else "Auditoria sem poda (0)."),
+              None if settings.retention_audit_days > 0 else "Defina RETENTION_AUDIT_DAYS (1 ano+)."),
     ]
-    # Contrato simples do §21 (booleans).
     flat = {i["key"]: i["ok"] for i in items}
-    return {"items": items, "checklist": {
+    return {"items": items, "categories": [{"key": k, "label": l} for k, l in CATEGORIES],
+            "summary": {"ok": sum(1 for i in items if i["ok"] is True),
+                        "pending": sum(1 for i in items if i["ok"] is False),
+                        "na": sum(1 for i in items if i["ok"] is None),
+                        "total": len(items)},
+            "checklist": {
         "secrets_encrypted": flat["secrets_encrypted"],
         "logs_sanitized": flat["logs_sanitized"],
         "spark_not_public": flat["spark_not_public"],
