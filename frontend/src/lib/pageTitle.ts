@@ -17,6 +17,7 @@ const TITLES: [string, string][] = [
   ["/data-quality", "Data Quality"],
   ["/backfills", "Reprocessamentos"],
   ["/audit", "Auditoria"],
+  ["/security", "Segurança"],
   ["/access", "Usuários"],
   ["/tags", "Tags"],
   ["/airflow", "Airflow legado"],

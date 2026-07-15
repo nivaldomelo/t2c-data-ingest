@@ -19,6 +19,8 @@ export interface Destination {
   file_format: string | null;
   write_mode: string;
   compression: string | null;
+  encryption_mode: string | null;
+  kms_key_id: string | null;
   partition_columns: string[] | null;
   primary_key_columns: string[] | null;
   staging_schema: string | null;
@@ -86,5 +88,7 @@ export interface DestinationSubmit {
   target_prefix?: string | null;
   file_format?: string | null;
   compression?: string | null;
+  encryption_mode?: string | null;
+  kms_key_id?: string | null;
   partition_columns?: string[] | null;
 }

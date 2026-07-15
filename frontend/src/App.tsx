@@ -27,6 +27,7 @@ import AlertsPage from "@/features/alerts/AlertsPage";
 import ObservabilityPage from "@/features/observability/ObservabilityPage";
 import IngestionAnalyticsPage from "@/features/analytics/IngestionAnalyticsPage";
 import IntegrationsPage from "@/features/integrations/IntegrationsPage";
+import SecurityPage from "@/features/security/SecurityPage";
 import AuditPage from "@/features/audit/AuditPage";
 import DataQualityPage from "@/features/data-quality/DataQualityPage";
 import AirflowPage from "@/features/airflow/AirflowPage";
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="/observability" element={<ObservabilityPage />} />
         <Route path="/analytics" element={<IngestionAnalyticsPage />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
+        <Route path="/security" element={<SecurityPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/data-quality" element={<DataQualityPage />} />

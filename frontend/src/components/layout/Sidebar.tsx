@@ -118,6 +118,7 @@ const GROUPS: NavGroup[] = [
     icon: Users,
     items: [
       { to: "/integrations", label: "Integrações (t2c_data)", icon: Cable, perm: "ingest:integrations:read" },
+      { to: "/security", label: "Segurança", icon: ShieldCheck, perm: "ingest:security:read" },
       { to: "/access", label: "Usuários & Acessos", icon: Users, perm: "ingest:admin" },
     ],
   },
