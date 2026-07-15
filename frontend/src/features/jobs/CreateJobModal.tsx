@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Code2, Flame, Plus, Trash2, Zap } from "lucide-react";
 
 import { api, ApiError, type Page } from "@/lib/api";
-import { Modal, PrimaryButton, SecondaryButton } from "@/components/ui";
+import { Modal, PrimaryButton, SecondaryButton, HelpBanner, FieldHint } from "@/components/ui";
 import { TagInput } from "@/features/tags/TagInput";
 import { cn } from "@/lib/cn";
 
@@ -149,7 +149,13 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
 
       {!engine ? (
         <div>
-          <p className="mb-3 text-sm font-medium text-gray-700">Escolha a engine de execução</p>
+          <HelpBanner title="O que é um job?">
+            Um <b>job</b> é uma unidade de execução de código (Spark ou Python) que lê de uma origem e grava
+            em um destino. Ele fica cadastrado aqui e pode ser executado manualmente, por um <b>schedule</b> ou
+            dentro de um <b>pipeline</b>. Ao criar, você poderá <b>abrir o código</b> (workspace versionado) ou
+            já <b>executar</b>. A API apenas enfileira; quem roda de fato é o worker/cluster Spark.
+          </HelpBanner>
+          <p className="mb-3 mt-4 text-sm font-medium text-gray-700">1. Escolha a engine de execução</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <EngineCard icon={<Flame size={22} />} title="Spark" onClick={() => { setEngine("spark_cluster"); setType("spark_python"); }}
               desc="Jobs distribuídos com PySpark, Spark SQL ou spark-submit. Ideal para grandes volumes e processamento em cluster." />
@@ -162,6 +168,13 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
           <button onClick={() => setEngine(null)} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800">
             <ArrowLeft size={14} /> Trocar engine ({engine === "spark_cluster" ? "Spark" : "Python"})
           </button>
+
+          <HelpBanner tone="tip">
+            Preencha de cima para baixo. Só <b>Nome</b> e <b>Tipo</b> são obrigatórios — o resto pode ser
+            ajustado depois no detalhe do job. Para cargas declarativas (MySQL→PostgreSQL/Data Lake), prefira
+            informar um <b>Destino configurável</b> e/ou o argumento <code>--control-name</code> em vez de fixar
+            origem/destino no código.
+          </HelpBanner>
 
           {/* tipo */}
           <div>
@@ -193,6 +206,11 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
                 <input type="checkbox" checked={createWorkspace} onChange={(e) => setCreateWorkspace(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
                 Criar workspace automaticamente (gera <code className="mx-1 rounded bg-white px-1 text-xs">main{engine === "spark_cluster" && type === "spark_sql" ? ".sql" : ".py"}</code> versionado)
               </label>
+              <FieldHint>
+                Marcado: criamos uma pasta de código versionada e um arquivo inicial que você edita no editor da
+                plataforma. Desmarcado: informe o caminho de um script <b>já existente</b> na imagem (ex.: um job
+                genérico controlado).
+              </FieldHint>
               {!createWorkspace && (
                 <input className={`${inputCls} mt-2 font-mono text-xs`} value={scriptPath} onChange={(e) => setScriptPath(e.target.value)}
                   placeholder={engine === "spark_cluster" ? "/opt/t2c/spark/jobs/grupo/job.py" : "/opt/t2c/python_jobs/grupo/job.py"} />
@@ -206,17 +224,28 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
               </div>
             )}
 
+            <div className="sm:col-span-2">
+              <FieldHint>
+                <b>Conexões (Origens):</b> credenciais ficam na conexão e são injetadas pelo worker como variáveis
+                de ambiente (<code>SOURCE_*</code>/<code>TARGET_*</code>) — nunca no código nem na linha de comando.
+                Use <b>origem</b> + <b>destino</b> para cargas de A→B; <b>conexão única</b> para jobs que usam só
+                uma base.
+              </FieldHint>
+            </div>
             <div>
               <label className={labelCls}>Conexão origem</label>
               <ConnSelect conns={conns} value={sourceConn} onChange={setSourceConn} />
+              <FieldHint>De onde os dados são lidos (ex.: <code>mysql_massa_teste</code>).</FieldHint>
             </div>
             <div>
               <label className={labelCls}>Conexão destino</label>
               <ConnSelect conns={conns} value={targetConn} onChange={setTargetConn} />
+              <FieldHint>Para onde gravar, quando não usar um Destino configurável abaixo.</FieldHint>
             </div>
             <div>
               <label className={labelCls}>Conexão única</label>
               <ConnSelect conns={conns} value={singleConn} onChange={setSingleConn} />
+              <FieldHint>Para jobs que operam em uma só base (ex.: uma automação/validação).</FieldHint>
             </div>
             <div className="sm:col-span-2">
               <label className={labelCls}>Destino configurável</label>
@@ -232,12 +261,19 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
               <div>
                 <label className={labelCls}>Cluster ID</label>
                 <input className={inputCls} type="number" min={0} value={clusterId} onChange={(e) => setClusterId(e.target.value)} placeholder="—" />
+                <FieldHint>Opcional. Deixe em branco para usar o cluster Spark padrão.</FieldHint>
               </div>
             )}
 
             {/* argumentos builder */}
             <div className="sm:col-span-2">
               <label className={labelCls}>Argumentos (chave/valor)</label>
+              <FieldHint>
+                Viram parâmetros de linha de comando do script: a chave <code>source-connection</code> com valor
+                <code> mysql_1</code> vira <code>--source-connection mysql_1</code>. Para a carga controlada, use a
+                chave <code>control-name</code> (valor <code>massa_teste.clientes</code>) ou <code>control-group</code>.
+                Deixe o valor vazio para flags sem valor.
+              </FieldHint>
               <div className="space-y-2">
                 {args.map((a, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -257,16 +293,19 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
             <div className="sm:col-span-2">
               <label className={labelCls}>Parâmetros padrão (JSON)</label>
               <textarea className={`${inputCls} font-mono text-xs`} rows={2} value={defaultParams} onChange={(e) => setDefaultParams(e.target.value)} placeholder='{ "chave": "valor" }' />
+              <FieldHint>Objeto JSON com valores padrão que o job pode ler em runtime (ex.: janela de datas). Opcional.</FieldHint>
               {paramsError && <p className="mt-1 text-xs text-red-500">{paramsError}</p>}
             </div>
 
             <div>
               <label className={labelCls}>Timeout (s)</label>
               <input className={inputCls} type="number" min={0} value={timeout} onChange={(e) => setTimeoutS(e.target.value)} placeholder="Sem limite" />
+              <FieldHint>Tempo máximo por execução; ao exceder, o job é encerrado como <i>timeout</i>.</FieldHint>
             </div>
             <div>
               <label className={labelCls}>Retry</label>
               <input className={inputCls} type="number" min={0} value={retry} onChange={(e) => setRetry(e.target.value)} />
+              <FieldHint>Quantas vezes reexecutar automaticamente se falhar (0 = não repetir).</FieldHint>
             </div>
 
             <div className="sm:col-span-2">

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import type { Page } from "@/lib/api";
-import { PrimaryButton, SecondaryButton } from "@/components/ui";
+import { PrimaryButton, SecondaryButton, HelpBanner, FieldHint } from "@/components/ui";
 import type { IngestionControl, S3DestinoConfig } from "@/features/ingestion-control/types";
 import {
   COMPRESSION_VALUES,
@@ -224,10 +224,18 @@ export function IngestionControlForm({
 
   return (
     <form onSubmit={submit} className="space-y-5">
+      <HelpBanner title="O que é o Controle de Ingestão?">
+        É o <b>centro declarativo</b> de cada carga: descreve <b>de onde</b> ler (origem), <b>para onde</b>
+        gravar (destino principal + cópias no Data Lake), o <b>tipo</b> (full/incremental), a <b>coluna
+        incremental</b> e o <b>watermark</b>, além de SLA e responsável. O job genérico lê estes parâmetros e
+        executa — sem precisar fixar nada no código. Só o <b>nome da tabela</b> é obrigatório; o resto define o
+        comportamento da carga.
+      </HelpBanner>
       <Section title="1 · Identificação">
         <div className="sm:col-span-2">
           <label className={label}>Nome da tabela *</label>
-          <input className={field} value={String(v.nome_tabela)} onChange={(e) => set("nome_tabela", e.target.value)} placeholder="ex.: software_test_lab.payments" />
+          <input className={field} value={String(v.nome_tabela)} onChange={(e) => set("nome_tabela", e.target.value)} placeholder="ex.: massa_teste.clientes" />
+          <FieldHint>Identificador da carga, no formato <code>schema.tabela</code>. Usado como referência em jobs (<code>--control-name</code>) e na análise histórica.</FieldHint>
         </div>
         <div>
           <label className={label}>Grupo</label>
@@ -392,29 +400,38 @@ export function IngestionControlForm({
       )}
 
       <Section title="3 · Estratégia de ingestão">
+        <div className="sm:col-span-2">
+          <HelpBanner tone="tip">
+            Em <b>INCREMENTAL</b>, a cada execução o job lê só o que mudou: <code>WHERE coluna_incremental &gt;
+            watermark_atual</code>. A coluna incremental é a <b>coluna de última alteração</b> (se houver), senão a
+            <b> coluna de data</b>. Ao terminar com sucesso, o watermark avança para o maior valor lido. Em
+            <b> FULL</b>, lê tudo sempre. As <b>colunas-chave</b> definem o upsert (evitam duplicar).
+          </HelpBanner>
+        </div>
         <div>
           <label className={label}>Tipo de ingestão</label>
           <select className={field} value={String(v.tipo_ingestao)} onChange={(e) => set("tipo_ingestao", e.target.value)}>{opt(TIPO_INGESTAO_VALUES)}</select>
+          <p className={hint}>FULL = recarrega tudo · INCREMENTAL = só novidades desde o watermark.</p>
         </div>
         <div>
           <label className={label}>Watermark atual</label>
           <input type="datetime-local" className={field} value={String(v.watermark_atual)} onChange={(e) => set("watermark_atual", e.target.value)} />
-          <p className={hint}>Último ponto de controle da ingestão incremental. Edite com cuidado.</p>
+          <p className={hint}>Último ponto processado. Deixe vazio para forçar uma carga inicial completa; edite com cuidado.</p>
         </div>
         <div>
           <label className={label}>Coluna de data</label>
-          <input className={field} value={String(v.coluna_data)} onChange={(e) => set("coluna_data", e.target.value)} />
-          <p className={hint}>Coluna usada para filtro por data.</p>
+          <input className={field} value={String(v.coluna_data)} onChange={(e) => set("coluna_data", e.target.value)} placeholder="ex.: created_at / dt_evento" />
+          <p className={hint}>Coluna de referência temporal; usada como incremental quando não houver "última alteração".</p>
         </div>
         <div>
           <label className={label}>Coluna de última alteração</label>
-          <input className={field} value={String(v.coluna_ultima_alteracao)} onChange={(e) => set("coluna_ultima_alteracao", e.target.value)} />
-          <p className={hint}>Usada para incremental/update.</p>
+          <input className={field} value={String(v.coluna_ultima_alteracao)} onChange={(e) => set("coluna_ultima_alteracao", e.target.value)} placeholder="ex.: updated_at" />
+          <p className={hint}>Preferida para o filtro incremental. Se a tabela não tiver, deixe vazio (usa a coluna de data).</p>
         </div>
         <div className="sm:col-span-2">
           <label className={label}>Colunas chave</label>
-          <input className={field} value={String(v.colunas_chave)} onChange={(e) => set("colunas_chave", e.target.value)} placeholder="id  ou  id,order_id" />
-          <p className={hint}>Colunas para merge/upsert, separadas por vírgula.</p>
+          <input className={field} value={String(v.colunas_chave)} onChange={(e) => set("colunas_chave", e.target.value)} placeholder="ex.: cliente_uuid" />
+          <p className={hint}>Chave de negócio para o upsert (ON CONFLICT), separada por vírgula. Ex.: <code>cliente_uuid</code>. Não use o <code>id</code> identity do destino.</p>
         </div>
       </Section>
 

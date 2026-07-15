@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import type { Page } from "@/lib/api";
-import { PrimaryButton, SecondaryButton } from "@/components/ui";
+import { PrimaryButton, SecondaryButton, HelpBanner } from "@/components/ui";
 import type {
   Destination, DestinationSubmit, DestinationType,
 } from "@/features/destinations/types";
@@ -118,6 +118,13 @@ export function DestinationForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      <HelpBanner title="O que é um Destino?">
+        Um destino descreve, de forma reutilizável, <b>para onde e como gravar</b> — sem credenciais (elas ficam
+        na Origem/conexão). PostgreSQL: schema, tabela, modo de escrita e upsert. S3/Data Lake: bucket, camada
+        (bronze/silver/gold), formato e partições. Marque <b>template</b> (com <code>{"{table}"}</code>) para um
+        destino atender <b>N tabelas</b> — o nome/última pasta é resolvido em runtime pelo Controle. Uma carga
+        pode ter vários destinos (ex.: cópia S3 Bronze + destino PostgreSQL).
+      </HelpBanner>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className={label}>Nome *</label>
