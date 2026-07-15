@@ -12,7 +12,7 @@ import os
 import shutil
 from datetime import datetime, timezone
 
-from t2c_ingest.core.config import settings
+from t2c_ingest.core.config import is_dev_environment, settings
 from t2c_ingest.models.job import JobDefinition
 
 ALLOWED_EXT = {".py", ".sql", ".sh", ".json", ".yaml", ".yml", ".md", ".txt"}
@@ -150,6 +150,45 @@ def read_file(root: str, rel: str) -> dict:
             "editable": os.path.splitext(real)[1].lower() in ALLOWED_EXT}
 
 
+import re as _re
+
+# Padrões de secret hardcoded no código (nomes de padrão, nunca o valor).
+_SECRET_PATTERNS: list[tuple[str, "_re.Pattern"]] = [
+    ("credencial_atribuida", _re.compile(
+        r"(?i)\b(password|senha|passwd|pwd|secret|api[_-]?key|access[_-]?key|secret[_-]?key|"
+        r"client[_-]?secret|token|authorization|bearer|aws_secret_access_key|aws_access_key_id)\b"
+        r"\s*[:=]\s*[\"']?[^\s\"']{4,}")),
+    ("aws_access_key_id", _re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("private_key_block", _re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("jdbc_com_senha", _re.compile(r"(?i)jdbc:[^\s\"']*password=[^\s\"'&]+")),
+    ("bearer_token", _re.compile(r"(?i)Authorization\s*:\s*Bearer\s+[A-Za-z0-9._\-]{8,}")),
+]
+
+
+def scan_code_secrets(content: str) -> list[str]:
+    """Retorna os NOMES dos padrões de secret encontrados no código (nunca os valores)."""
+    if not content:
+        return []
+    found = []
+    for name, rx in _SECRET_PATTERNS:
+        if rx.search(content):
+            found.append(name)
+    return found
+
+
+def _enforce_secret_scan(content: str, result: dict) -> dict:
+    """Bloqueia (produção) ou alerta (dev) se houver secret no código. Anexa 'secret_findings'."""
+    findings = scan_code_secrets(content)
+    if findings:
+        if not is_dev_environment(getattr(settings, "env", "production")):
+            raise WorkspaceError(
+                422,
+                "Possível credencial no código (" + ", ".join(findings) + "). Use Origens/Variáveis "
+                "secretas em vez de fixar segredos no código. Salvamento bloqueado em produção.")
+        result["secret_findings"] = findings
+    return result
+
+
 def write_file(job_id: int, root: str, rel: str, content: str, expected_mtime: str | None) -> dict:
     real = safe_path(root, rel, must_exist=True)
     check_editable(real)
@@ -161,11 +200,14 @@ def write_file(job_id: int, root: str, rel: str, content: str, expected_mtime: s
         raise WorkspaceError(409, "Este arquivo foi alterado por outro usuário ou processo. Recarregue antes de salvar.")
     with open(real, "r", encoding="utf-8", errors="replace") as fh:
         before = fh.read()
+    result = {"action": "updated", "hash_before": sha256(before), "hash_after": sha256(content),
+              "size_before": len(before.encode()), "size_after": len(content.encode())}
+    _enforce_secret_scan(content, result)  # pode levantar (prod) antes de gravar
     backup = _backup(job_id, real, "update", rel)
     with open(real, "w", encoding="utf-8") as fh:
         fh.write(content)
-    return {"action": "updated", "backup_path": backup, "hash_before": sha256(before), "hash_after": sha256(content),
-            "size_before": len(before.encode()), "size_after": len(content.encode()), "last_modified_at": iso_mtime(real)}
+    result.update({"backup_path": backup, "last_modified_at": iso_mtime(real)})
+    return result
 
 
 def create_file(root: str, rel: str, content: str) -> dict:
@@ -173,10 +215,13 @@ def create_file(root: str, rel: str, content: str) -> dict:
     check_editable(real)
     if os.path.exists(real):
         raise WorkspaceError(409, "Já existe um arquivo com esse caminho.")
+    result = {"action": "created", "hash_after": sha256(content or ""), "size_after": len((content or "").encode())}
+    _enforce_secret_scan(content or "", result)  # pode levantar (prod) antes de gravar
     os.makedirs(os.path.dirname(real), exist_ok=True)
     with open(real, "w", encoding="utf-8") as fh:
         fh.write(content or "")
-    return {"action": "created", "hash_after": sha256(content or ""), "size_after": len((content or "").encode()), "last_modified_at": iso_mtime(real)}
+    result["last_modified_at"] = iso_mtime(real)
+    return result
 
 
 def create_folder(root: str, rel: str) -> dict:

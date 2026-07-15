@@ -42,6 +42,9 @@ class Destination(Base):
     file_format: Mapped[str | None] = mapped_column(String(50))
     write_mode: Mapped[str] = mapped_column(String(50), nullable=False, default="append", server_default="append")
     compression: Mapped[str | None] = mapped_column(String(50))
+    # Criptografia S3 em repouso (SSE-S3/SSE-KMS). kms_key_id NÃO é secreto; a chave nunca é salva.
+    encryption_mode: Mapped[str | None] = mapped_column(String(20))
+    kms_key_id: Mapped[str | None] = mapped_column(String(300))
 
     partition_columns: Mapped[list | None] = mapped_column(JSONB)
     primary_key_columns: Mapped[list | None] = mapped_column(JSONB)

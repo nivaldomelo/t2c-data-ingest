@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
+
+
+def _correlation_id() -> str:
+    """ID de correlação para rastreabilidade entre execução, logs e integração (sem expor dados)."""
+    return "ci_" + uuid.uuid4().hex[:20]
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -62,6 +68,7 @@ def create_job_execution(
         triggered_by=triggered_by,
         attempt=attempt,
         queued_at=now,
+        correlation_id=_correlation_id(),
     )
     db.add(execution)
     db.flush()
@@ -122,6 +129,7 @@ def enqueue_pipeline_execution(
         parameters=parameters or {},
         triggered_by=user.email,
         queued_at=now,
+        correlation_id=_correlation_id(),
     )
     db.add(execution)
     db.flush()

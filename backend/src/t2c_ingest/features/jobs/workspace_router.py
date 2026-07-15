@@ -51,6 +51,11 @@ def _record(db: Session, job: JobDefinition, user: CurrentUser, info: dict, file
     ))
     record_audit(db, action=_AUDIT.get(action, "JOB_CODE_FILE_UPDATED"), user=user, entity_type="job",
                  entity_id=job.id, detail={"file_path": file_path, "backup_path": info.get("backup_path")})
+    # Auditoria de segurança: padrão de secret detectado no código (dev — em prod o salvamento é
+    # bloqueado no serviço). Registra só os NOMES dos padrões, nunca o conteúdo.
+    if info.get("secret_findings"):
+        record_audit(db, action="JOB_CODE_SECRET_PATTERN_DETECTED", user=user, entity_type="job",
+                     entity_id=job.id, detail={"file_path": file_path, "patterns": info["secret_findings"]})
     db.commit()
 
 
