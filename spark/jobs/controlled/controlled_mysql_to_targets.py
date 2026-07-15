@@ -259,32 +259,36 @@ def process_control(spark, ctrl: dict, execution_id: str) -> bool:
 
 
 def _print_summary(ctrl, incr, lidos, grav_pg, grav_s3, s3_stats, watermark_novo, status, erro=None):
+    """Imprime o INGEST_SUMMARY.
+
+    O worker (log_parser.parse_ingest_summary) lê os pares key=value que vêm APÓS o token
+    ``INGEST_SUMMARY`` NA MESMA LINHA — por isso a linha-máquina é única. A regex ancora nas chaves
+    conhecidas, então valores com espaço (watermark) são tolerados. Um bloco legível separado
+    acompanha, para leitura humana (sem o token, para não confundir o parser)."""
     roles = {d["role"]: d["type"] for d in ctrl["destinations"]}
-    lines = [
-        "INGEST_SUMMARY:",
-        f"table={ctrl['nome_tabela']}",
-        f"source_type={ctrl['source'].get('source_type')}",
-        f"target_primary={roles.get('primary', '')}",
-        f"target_copy={roles.get('datalake_copy', '')}",
-        f"tipo={ctrl.get('tipo_ingestao')}",
-        f"incr_col={incr}",
-        f"watermark_anterior={ctrl['source'].get('watermark')}",
-        f"watermark_novo={watermark_novo}",
-        f"lidos={lidos}",
-        f"gravados={grav_pg or grav_s3}",
-        f"gravados_postgres={grav_pg}",
-        f"gravados_s3={grav_s3}",
-        f"files_written={s3_stats.get('files_written')}",
-        f"bytes_written={s3_stats.get('bytes_written')}",
-        f"partition_path={s3_stats.get('partition_path')}",
-        f"target_type=s3",
-        f"target_path={next((d.get('target_path') for d in ctrl['destinations'] if d['type']=='s3'), '')}",
-        f"file_format=parquet",
-        f"status={status}",
+    s3_path = next((d.get("target_path") for d in ctrl["destinations"] if d["type"] == "s3"), "")
+    gravados = grav_pg if grav_pg else grav_s3
+    kv = {
+        "table": ctrl["nome_tabela"], "tipo": ctrl.get("tipo_ingestao"), "incr_col": incr,
+        "watermark_anterior": ctrl["source"].get("watermark"), "watermark_novo": watermark_novo,
+        "lidos": lidos, "gravados": gravados, "status": status,
+        "target_type": "s3", "target_path": s3_path, "file_format": "parquet",
+        "partition_path": s3_stats.get("partition_path"),
+        "files_written": s3_stats.get("files_written"), "bytes_written": s3_stats.get("bytes_written"),
+    }
+    # Linha-máquina única (consumida pelo worker/DQ/outbox).
+    machine = "INGEST_SUMMARY: " + " ".join(f"{k}={v}" for k, v in kv.items() if v is not None)
+    # Bloco legível (destinos/contagens por papel), sem o token INGEST_SUMMARY.
+    readable = [
+        "RESUMO_CARGA:",
+        f"  origem={ctrl['source'].get('source_type')} destino_primary={roles.get('primary','')} "
+        f"copia_datalake={roles.get('datalake_copy','')}",
+        f"  gravados_postgres={grav_pg} gravados_s3={grav_s3}",
     ]
     if erro:
-        lines.append(f"erro={erro[:200]}")
-    print("\n".join(lines), flush=True)
+        readable.append(f"  erro={erro[:200]}")
+    print("\n".join(readable), flush=True)
+    print(machine, flush=True)
 
 
 def main() -> int:

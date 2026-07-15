@@ -148,11 +148,20 @@ def resolve_layer(
     """Camada real do destino, na ordem: destination.target_layer → control.target_layer →
     control.destino (se for camada) → data_lake schema/layer → path S3 → null.
 
-    NUNCA retorna o tipo da conexão (s3/postgres/mysql...)."""
-    for candidate in (destination_layer, control_layer, control_destino, data_lake_layer):
+    NUNCA retorna o tipo da conexão (s3/postgres/mysql...) nem valores combinados (postgres_s3)."""
+    # Campos explícitos de camada: aceitam qualquer valor que não seja tipo de conexão.
+    for candidate in (destination_layer, control_layer):
         norm = _norm_layer(candidate)
         if norm:
             return norm
+    # control.destino só vale se for uma CAMADA conhecida (BRONZE/SILVER/GOLD...) — nunca
+    # POSTGRES_S3/S3/DATALAKE, que são tipo/rota de destino, não camada.
+    cd = (control_destino or "").strip().lower()
+    if cd in _LAYER_HINTS:
+        return cd
+    norm = _norm_layer(data_lake_layer)
+    if norm:
+        return norm
     return layer_from_path(target_path)
 
 
