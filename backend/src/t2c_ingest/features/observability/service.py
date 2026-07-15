@@ -443,15 +443,25 @@ def history(db: Session, *, entity: str, entity_id: int, days: int = 30, limit: 
     writ_vals = [e.records_written for e in rows if e.records_written is not None]
     last = rows[0] if rows else None
 
-    # Série diária (fuso operacional).
+    # Série diária (fuso operacional), com TODOS os dias do período preenchidos (0 quando não
+    # houve execução) — assim os gráficos mostram a janela inteira e as lacunas.
+    def _blank(day: str) -> dict:
+        return {"date": day, "runs": 0, "success": 0, "failed": 0, "records_read": 0,
+                "records_written": 0, "watermark": None, "_dsum": 0, "_dn": 0}
+
+    today_local = _now().astimezone(tz).date()
+    start_local = (since).astimezone(tz).date()
     series: dict[str, dict] = {}
+    d = start_local
+    while d <= today_local:
+        series[d.isoformat()] = _blank(d.isoformat())
+        d += timedelta(days=1)
     for e in rows:
         st = _as_utc(e.started_at)
         if not st:
             continue
         day = st.astimezone(tz).date().isoformat()
-        b = series.setdefault(day, {"date": day, "runs": 0, "success": 0, "failed": 0,
-                                    "records_read": 0, "records_written": 0, "_dsum": 0, "_dn": 0})
+        b = series.setdefault(day, _blank(day))
         b["runs"] += 1
         if e.status == "success":
             b["success"] += 1
@@ -459,6 +469,9 @@ def history(db: Session, *, entity: str, entity_id: int, days: int = 30, limit: 
             b["failed"] += 1
         b["records_read"] += e.records_read or 0
         b["records_written"] += e.records_written or 0
+        wa = _as_utc(e.watermark_after)
+        if wa and (b["watermark"] is None or wa.isoformat() > b["watermark"]):
+            b["watermark"] = wa.isoformat()
         if e.duration_seconds is not None:
             b["_dsum"] += e.duration_seconds
             b["_dn"] += 1
@@ -476,6 +489,7 @@ def history(db: Session, *, entity: str, entity_id: int, days: int = 30, limit: 
     for e in rows[:limit]:
         d = _exec_row(e, controls, conns)
         d["quality"] = (e.quality_summary or {}).get("overall")
+        d["error"] = (e.final_message or "")[:300] if e.status in ("failed", "timeout") else None
         d["trigger_type"] = e.trigger_type
         executions.append(d)
 

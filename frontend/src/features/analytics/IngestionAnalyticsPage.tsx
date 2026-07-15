@@ -73,9 +73,10 @@ export default function IngestionAnalyticsPage() {
 
   const cards = useMemo(() => ([
     { label: "Execuções", v: s.total_runs, tone: undefined },
-    { label: "Taxa de sucesso", v: s.success_rate == null ? "—" : `${s.success_rate}%`, tone: (Number(s.success_rate) < 90 ? "danger" : "success") as any },
+    { label: "Taxa de sucesso", v: s.success_rate == null ? "—" : `${s.success_rate}%`, tone: (s.total_runs && Number(s.success_rate) < 90 ? "danger" : Number(s.success_rate) === 100 ? "success" : undefined) as any },
     { label: "Falhas", v: s.failed, tone: (Number(s.failed) ? "danger" : undefined) as any },
     { label: "Duração média", v: fmtDur(s.avg_duration_seconds), tone: undefined },
+    { label: "Registros lidos", v: fmtNum(s.total_records_read), tone: undefined },
     { label: "Registros gravados", v: fmtNum(s.total_records_written), tone: undefined },
     { label: "Última execução", v: s.last_status ?? "—", tone: (String(s.last_status) === "success" ? "success" : String(s.last_status) === "failed" ? "danger" : undefined) as any },
   ]), [s]);
@@ -134,19 +135,22 @@ export default function IngestionAnalyticsPage() {
       ) : (
         <>
           {/* KPIs */}
-          <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-7">
             {history.isLoading
-              ? Array.from({ length: 6 }).map((_, i) => <MetricCardSkeleton key={i} />)
+              ? Array.from({ length: 7 }).map((_, i) => <MetricCardSkeleton key={i} />)
               : cards.map((c) => <MetricCard key={c.label} label={c.label} value={c.v ?? 0} tone={c.tone} />)}
           </div>
 
           {/* Gráficos */}
-          <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
             <ChartCard title="Execuções por dia" subtitle="verde = sucesso · vermelho = falha">
               <RunsChart series={h?.series ?? []} />
             </ChartCard>
-            <ChartCard title="Registros gravados por dia">
-              <BarsChart series={h?.series ?? []} field="records_written" color="#0d8a80" />
+            <ChartCard title="Registros gravados por dia" subtitle="soma diária">
+              <BarsChart series={h?.series ?? []} field="records_written" color="#0d8a80" fmt={fmtNum} />
+            </ChartCard>
+            <ChartCard title="Duração média por dia" subtitle="segundos">
+              <BarsChart series={h?.series ?? []} field="avg_duration" color="#6366f1" fmt={fmtDur} />
             </ChartCard>
           </div>
 
@@ -166,15 +170,16 @@ export default function IngestionAnalyticsPage() {
                 <tbody className="divide-y divide-gray-50">
                   {(h?.executions ?? []).map((r, i) => (
                     <tr key={i} className="cursor-pointer hover:bg-gray-50/60"
+                      title={r.error ? String(r.error) : undefined}
                       onClick={() => navigate(`/executions/${r.execution_id}`)}>
                       <Td mono>#{String(r.execution_id)}</Td>
-                      <Td><StatusDot s={r.status} />{String(r.status)}</Td>
+                      <Td><span className="inline-flex items-center whitespace-nowrap"><StatusDot s={r.status} />{String(r.status)}</span></Td>
                       <Td>{fmtDate(r.started_at)}</Td>
                       <Td r>{fmtDur(r.duration_seconds)}</Td>
                       <Td r>{r.records_read == null ? "—" : fmtNum(r.records_read)}</Td>
                       <Td r>{r.records_written == null ? "—" : fmtNum(r.records_written)}</Td>
                       <Td mono>{r.watermark_after == null ? "—" : fmtDate(r.watermark_after)}</Td>
-                      <Td>{r.quality ? String(r.quality) : "—"}</Td>
+                      <Td><QualityChip q={r.quality} /></Td>
                       <Td>{String(r.trigger_type ?? "—")}</Td>
                     </tr>
                   ))}
@@ -211,7 +216,9 @@ function RunsChart({ series }: { series: DayPoint[] }) {
   const w = series.length * (bw + GAP);
   return (
     <div className="overflow-x-auto">
+      <div className="mb-1 text-[10px] text-gray-400">máx/dia: {max}</div>
       <svg width={w} height={CH + 22} className="min-w-full">
+        <line x1="0" y1={CH} x2={w} y2={CH} stroke="#e5e7eb" strokeWidth="1" />
         {series.map((d, i) => {
           const x = i * (bw + GAP);
           const hOk = (d.success / max) * CH;
@@ -231,22 +238,26 @@ function RunsChart({ series }: { series: DayPoint[] }) {
     </div>
   );
 }
-function BarsChart({ series, field, color }: { series: DayPoint[]; field: keyof DayPoint; color: string }) {
+function BarsChart({ series, field, color, fmt }: { series: DayPoint[]; field: keyof DayPoint; color: string; fmt?: (v: unknown) => string }) {
   if (series.length === 0) return <Empty />;
   const vals = series.map((d) => Number(d[field] || 0));
   const max = Math.max(1, ...vals);
   const bw = Math.max(6, Math.min(48, Math.floor(720 / series.length) - GAP));
   const w = series.length * (bw + GAP);
+  const f = fmt ?? ((v: unknown) => Number(v).toLocaleString("pt-BR"));
   return (
     <div className="overflow-x-auto">
+      <div className="mb-1 text-[10px] text-gray-400">máx: {f(max)}</div>
       <svg width={w} height={CH + 22} className="min-w-full">
+        <line x1="0" y1={CH} x2={w} y2={CH} stroke="#e5e7eb" strokeWidth="1" />
         {series.map((d, i) => {
           const x = i * (bw + GAP);
-          const bh = (Number(d[field] || 0) / max) * CH;
+          const raw = Number(d[field] || 0);
+          const bh = (raw / max) * CH;
           return (
             <g key={d.date}>
-              <rect x={x} y={CH - bh} width={bw} height={bh} fill={color} rx="1" />
-              <title>{`${d.date}: ${Number(d[field] || 0).toLocaleString("pt-BR")}`}</title>
+              <rect x={x} y={CH - bh} width={bw} height={bh} fill={color} rx="1" opacity={raw ? 1 : 0.25} />
+              <title>{`${d.date}: ${raw ? f(raw) : "—"}`}</title>
               {(i % Math.ceil(series.length / 12 || 1) === 0) && (
                 <text x={x + bw / 2} y={CH + 14} textAnchor="middle" fontSize="9" fill="#94a3b8">{fmtDay(d.date)}</text>
               )}
@@ -263,6 +274,13 @@ function StatusDot({ s }: { s: unknown }) {
   const v = String(s ?? "").toLowerCase();
   const c = v === "success" ? "bg-emerald-500" : v === "failed" || v === "timeout" ? "bg-red-500" : v === "running" ? "bg-sky-500" : "bg-gray-300";
   return <span className={cn("mr-1.5 inline-block h-2 w-2 rounded-full align-middle", c)} />;
+}
+function QualityChip({ q }: { q: unknown }) {
+  const v = String(q ?? "");
+  if (!v) return <span className="text-gray-400">—</span>;
+  const cls = v === "pass" ? "bg-emerald-50 text-emerald-700" : v === "fail" ? "bg-red-50 text-red-700"
+    : v === "warn" ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-500";
+  return <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", cls)}>{v}</span>;
 }
 function Th({ children, r }: { children: React.ReactNode; r?: boolean }) { return <th className={cn("px-3 py-2 font-medium", r && "text-right")}>{children}</th>; }
 function Td({ children, r, mono }: { children: React.ReactNode; r?: boolean; mono?: boolean }) {
