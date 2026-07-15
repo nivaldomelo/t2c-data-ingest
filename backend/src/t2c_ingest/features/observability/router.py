@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from t2c_ingest.core.db import get_db
@@ -33,6 +33,19 @@ def running(db: Session = Depends(get_db), _: CurrentUser = _guard()) -> list[di
 @router.get("/failures")
 def failures(db: Session = Depends(get_db), _: CurrentUser = _guard()) -> list[dict]:
     return service.failures(db)
+
+
+@router.get("/history")
+def history(
+    entity: str = Query(..., description="job | pipeline | control"),
+    id: int = Query(..., description="id da entidade"),
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    _: CurrentUser = _guard(),
+) -> dict:
+    if entity not in ("job", "pipeline", "control"):
+        raise HTTPException(status_code=422, detail="entity deve ser job|pipeline|control")
+    return service.history(db, entity=entity, entity_id=id, days=days)
 
 
 @router.get("/late-loads")

@@ -5,6 +5,7 @@ const TITLES: [string, string][] = [
   ["/jobs", "Jobs"],
   ["/pipelines", "Pipelines"],
   ["/executions", "Execuções"],
+  ["/analytics", "Análise de Ingestões"],
   ["/schedules", "Schedules"],
   ["/connections", "Origens"],
   ["/variables", "Variáveis"],

@@ -13,6 +13,7 @@ import {
   DownloadCloud,
   History,
   LayoutDashboard,
+  LineChart,
   Package,
   PlayCircle,
   Plug,
@@ -98,6 +99,7 @@ const GROUPS: NavGroup[] = [
     icon: Activity,
     items: [
       { to: "/observability", label: "Observabilidade", icon: Activity, perm: "ingest:read" },
+      { to: "/analytics", label: "Análise de Ingestões", icon: LineChart, perm: "ingest:read" },
       { to: "/alerts", label: "Alertas", icon: Bell, perm: "ingest:alerts:read" },
     ],
   },
