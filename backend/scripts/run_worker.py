@@ -326,6 +326,22 @@ def _run_one(db, execution: Execution) -> None:
                        f"destino {control_info['target_summary'].get('target_type')})")
             # Marca a carga como EM_EXECUCAO no Controle assim que inicia.
             _mark_control_running(db, control_info["control_id"])
+        # Carga multi-destino declarativa (job genérico): injeta T2C_CONTROL_CONFIG (origem + N
+        # destinos) + credenciais por conexão via env. O job grava em cada destino sem args
+        # hardcoded de origem/destino.
+        try:
+            from t2c_ingest.features.connections.worker_support import build_controlled_config
+
+            multi = build_controlled_config(db, job, resolved)
+            if multi:
+                resolved.env["T2C_EXECUTION_ID"] = str(execution.id)
+                if not execution.control_id and multi.get("primary_control_id"):
+                    execution.control_id = multi["primary_control_id"]
+                    _mark_control_running(db, multi["primary_control_id"])
+                seq = _log(db, execution.id, seq, "INFO",
+                           f"Carga multi-destino: controles {multi['control_ids']} resolvidos.")
+        except Exception as exc:  # noqa: BLE001 - multi-destino nunca quebra o preparo
+            seq = _log(db, execution.id, seq, "WARNING", f"multi-destino ignorado: {exc}")
         connection_env = resolved.env
         connection_confs = resolved.spark_confs
         connection_secrets = resolved.secret_values
