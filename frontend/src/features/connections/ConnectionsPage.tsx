@@ -156,12 +156,12 @@ export default function ConnectionsPage() {
     <div>
       <PageHeader
         icon={<Plug size={22} />}
-        title="Conexões"
-        description="Gerencie conexões com bancos de dados, Data Lake, storages e APIs usadas por jobs e pipelines."
+        title="Origens"
+        description="Cadastre e teste as origens de dados (bancos, Data Lake, storages e APIs) usadas pelas cargas, jobs e pipelines."
         actions={
           perms.write ? (
             <PrimaryButton icon={<Plus size={16} />} onClick={openCreate}>
-              Nova conexão
+              Nova origem
             </PrimaryButton>
           ) : null
         }
