@@ -233,7 +233,7 @@ def run_query(
                  entity_type="data_lake_query", entity_id=row.id)
     db.commit()
     db.refresh(row)
-    return _query_out(row)
+    return _query_out(row, db)
 
 
 @router.get("/queries/{query_id}", response_model=QueryResultOut)
@@ -245,7 +245,7 @@ def get_query(
     row = db.get(DataLakeQueryHistory, query_id)
     if not row:
         raise HTTPException(status_code=404, detail="Consulta não encontrada")
-    return _query_out(row)
+    return _query_out(row, db)
 
 
 @router.get("/query-history", response_model=list[QueryHistoryItem])
@@ -265,8 +265,48 @@ def query_history(
     return [QueryHistoryItem.model_validate(r) for r in rows]
 
 
-def _query_out(row: DataLakeQueryHistory) -> QueryResultOut:
+# Colunas de PII sempre mascaradas por padrão, além das declaradas em Controle.dados_sensiveis.
+_DEFAULT_SENSITIVE = {"email", "e_mail", "documento", "cpf", "cnpj", "telefone", "phone",
+                      "nome", "name", "endereco", "address", "senha", "password"}
+
+
+def _sensitive_columns(db: Session) -> set[str]:
+    """Nomes de colunas sensíveis (lowercased) — união de todos os Controle.dados_sensiveis + PII padrão."""
+    cols = set(_DEFAULT_SENSITIVE)
+    try:
+        from t2c_ingest.features.ingestion_control.models import IngestionControl
+        for (ds,) in db.execute(select(IngestionControl.dados_sensiveis)
+                                .where(IngestionControl.dados_sensiveis.is_not(None))):
+            for c in (ds or "").split(","):
+                c = c.strip().lower()
+                if c:
+                    cols.add(c)
+    except Exception:  # noqa: BLE001
+        pass
+    return cols
+
+
+def _mask_preview(preview: dict, sensitive: set[str]) -> dict:
+    """Mascara as células das colunas sensíveis na amostra (§16/§17)."""
+    columns = preview.get("columns", []) or []
+    rows = preview.get("rows", []) or []
+    sens_idx = [i for i, c in enumerate(columns) if str(c).strip().lower() in sensitive]
+    if not sens_idx:
+        return {"columns": columns, "rows": rows}
+    masked_rows = []
+    for r in rows:
+        r = list(r)
+        for i in sens_idx:
+            if i < len(r) and r[i] not in (None, ""):
+                r[i] = "***"
+        masked_rows.append(r)
+    return {"columns": columns, "rows": masked_rows, "_masked": [columns[i] for i in sens_idx]}
+
+
+def _query_out(row: DataLakeQueryHistory, db: Session | None = None) -> QueryResultOut:
     preview = row.result_preview or {}
+    if db is not None:
+        preview = _mask_preview(preview, _sensitive_columns(db))
     return QueryResultOut(
         id=row.id, status=row.status, executed_sql=row.executed_sql, translated_sql=row.translated_sql,
         columns=preview.get("columns", []), rows=preview.get("rows", []),

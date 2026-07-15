@@ -13,6 +13,7 @@ import {
   DownloadCloud,
   History,
   LayoutDashboard,
+  LineChart,
   Package,
   PlayCircle,
   Plug,
@@ -75,10 +76,10 @@ const GROUPS: NavGroup[] = [
     icon: DownloadCloud,
     items: [
       { to: "/ingestion-control", label: "Controle de Ingestão", icon: Database, perm: "ingest:control:read" },
-      { to: "/connections", label: "Conexões", icon: Plug, perm: "ingest:connections:read" },
+      { to: "/connections", label: "Origens", icon: Plug, perm: "ingest:connections:read" },
       { to: "/destinations", label: "Destinos", icon: Target, perm: "ingest:destinations:read" },
-      { to: "/data-lake", label: "Data Lake", icon: Boxes, perm: "ingest:data-lake:read" },
       { to: "/variables", label: "Variáveis", icon: Variable, perm: "ingest:variables:read" },
+      { to: "/data-lake", label: "Data Lake", icon: Boxes, perm: "ingest:data-lake:read" },
       { to: "/tags", label: "Tags", icon: TagsIcon, perm: "ingest:tags:read" },
     ],
   },
@@ -98,6 +99,7 @@ const GROUPS: NavGroup[] = [
     icon: Activity,
     items: [
       { to: "/observability", label: "Observabilidade", icon: Activity, perm: "ingest:read" },
+      { to: "/analytics", label: "Análise de Ingestões", icon: LineChart, perm: "ingest:read" },
       { to: "/alerts", label: "Alertas", icon: Bell, perm: "ingest:alerts:read" },
     ],
   },
@@ -116,6 +118,7 @@ const GROUPS: NavGroup[] = [
     icon: Users,
     items: [
       { to: "/integrations", label: "Integrações (t2c_data)", icon: Cable, perm: "ingest:integrations:read" },
+      { to: "/security", label: "Segurança", icon: ShieldCheck, perm: "ingest:security:read" },
       { to: "/access", label: "Usuários & Acessos", icon: Users, perm: "ingest:admin" },
     ],
   },

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import type { Page } from "@/lib/api";
-import { PrimaryButton, SecondaryButton } from "@/components/ui";
+import { PrimaryButton, SecondaryButton, HelpBanner } from "@/components/ui";
 import type {
   Destination, DestinationSubmit, DestinationType,
 } from "@/features/destinations/types";
@@ -52,6 +52,8 @@ export function DestinationForm({
     file_format: initial?.file_format ?? "parquet",
     compression: initial?.compression ?? "snappy",
     partition_columns: (initial?.partition_columns ?? []).join(","),
+    encryption_mode: initial?.encryption_mode ?? "SSE-S3",
+    kms_key_id: initial?.kms_key_id ?? "",
   }));
   const [localErr, setLocalErr] = useState<string | null>(null);
 
@@ -88,6 +90,8 @@ export function DestinationForm({
         file_format: v.file_format,
         compression: v.compression,
         partition_columns: list(v.partition_columns),
+        encryption_mode: v.encryption_mode || null,
+        kms_key_id: v.encryption_mode === "SSE-KMS" ? (v.kms_key_id.trim() || null) : null,
       });
     } else {
       if (!v.target_schema.trim()) { setLocalErr("Schema destino é obrigatório."); return null; }
@@ -118,6 +122,13 @@ export function DestinationForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      <HelpBanner title="O que é um Destino?">
+        Um destino descreve, de forma reutilizável, <b>para onde e como gravar</b> — sem credenciais (elas ficam
+        na Origem/conexão). PostgreSQL: schema, tabela, modo de escrita e upsert. S3/Data Lake: bucket, camada
+        (bronze/silver/gold), formato e partições. Marque <b>template</b> (com <code>{"{table}"}</code>) para um
+        destino atender <b>N tabelas</b> — o nome/última pasta é resolvido em runtime pelo Controle. Uma carga
+        pode ter vários destinos (ex.: cópia S3 Bronze + destino PostgreSQL).
+      </HelpBanner>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className={label}>Nome *</label>
@@ -166,6 +177,16 @@ export function DestinationForm({
               <div><label className={label}>Formato *</label><select className={field} value={v.file_format} onChange={(e) => set("file_format", e.target.value)}>{FILE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}</select></div>
               <div><label className={label}>Compressão</label><select className={field} value={v.compression} onChange={(e) => set("compression", e.target.value)}>{COMPRESSIONS.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
               <div className="sm:col-span-2"><label className={label}>Colunas de partição</label><input className={field} value={v.partition_columns} onChange={(e) => set("partition_columns", e.target.value)} placeholder="ano,mes,dia" /></div>
+              <div>
+                <label className={label}>Criptografia (em repouso)</label>
+                <select className={field} value={v.encryption_mode} onChange={(e) => set("encryption_mode", e.target.value)}>
+                  <option value="SSE-S3">SSE-S3 (padrão)</option>
+                  <option value="SSE-KMS">SSE-KMS (recomendado em produção)</option>
+                </select>
+              </div>
+              {v.encryption_mode === "SSE-KMS" && (
+                <div><label className={label}>KMS key id</label><input className={field} value={v.kms_key_id} onChange={(e) => set("kms_key_id", e.target.value)} placeholder="arn:aws:kms:... ou alias/minha-chave" /></div>
+              )}
             </>
           ) : (
             <>

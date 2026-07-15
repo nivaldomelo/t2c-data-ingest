@@ -399,3 +399,116 @@ def sla_report(db: Session) -> dict:
         },
         "items": [h for h in health if h["is_late"] or h["sla_breached"]],
     }
+
+
+# ─────────────────────────── Análise histórica por entidade ───────────────────────────
+
+def _entity_executions_query(db: Session, entity: str, entity_id: int):
+    """(query base de Execution para a entidade, nome legível). entity: job|pipeline|control."""
+    from t2c_ingest.models.job import JobDefinition
+    from t2c_ingest.models.pipeline import PipelineDefinition, PipelineExecution, PipelineStepExecution
+
+    if entity == "job":
+        job = db.get(JobDefinition, entity_id)
+        return select(Execution).where(Execution.job_id == entity_id), (job.name if job else f"job #{entity_id}")
+    if entity == "control":
+        ctrl = db.get(IngestionControl, entity_id)
+        return (select(Execution).where(Execution.control_id == entity_id),
+                (ctrl.nome_tabela if ctrl else f"controle #{entity_id}"))
+    if entity == "pipeline":
+        p = db.get(PipelineDefinition, entity_id)
+        sub = select(PipelineExecution.id).where(PipelineExecution.pipeline_id == entity_id)
+        exids = (select(PipelineStepExecution.execution_id)
+                 .where(PipelineStepExecution.pipeline_execution_id.in_(sub),
+                        PipelineStepExecution.execution_id.is_not(None)))
+        return select(Execution).where(Execution.id.in_(exids)), (p.name if p else f"pipeline #{entity_id}")
+    raise ValueError("entidade inválida (use job|pipeline|control)")
+
+
+def history(db: Session, *, entity: str, entity_id: int, days: int = 30, limit: int = 200) -> dict:
+    """Histórico de TODAS as ingestões de uma entidade (job/pipeline/tabela do controle):
+    resumo agregado + série temporal diária + lista de execuções para drill-down."""
+    base, name = _entity_executions_query(db, entity, entity_id)
+    since = _now() - timedelta(days=max(days, 1))
+    rows = db.scalars(base.where(Execution.started_at >= since)
+                      .order_by(Execution.started_at.desc())).all()
+
+    tz = _tz()
+    total = len(rows)
+    success = sum(1 for e in rows if e.status == "success")
+    failed = sum(1 for e in rows if e.status in ("failed", "timeout"))
+    running = sum(1 for e in rows if e.status == "running")
+    durs = [e.duration_seconds for e in rows if e.duration_seconds is not None]
+    read_vals = [e.records_read for e in rows if e.records_read is not None]
+    writ_vals = [e.records_written for e in rows if e.records_written is not None]
+    last = rows[0] if rows else None
+
+    # Série diária (fuso operacional), com TODOS os dias do período preenchidos (0 quando não
+    # houve execução) — assim os gráficos mostram a janela inteira e as lacunas.
+    def _blank(day: str) -> dict:
+        return {"date": day, "runs": 0, "success": 0, "failed": 0, "records_read": 0,
+                "records_written": 0, "watermark": None, "_dsum": 0, "_dn": 0}
+
+    today_local = _now().astimezone(tz).date()
+    start_local = (since).astimezone(tz).date()
+    series: dict[str, dict] = {}
+    d = start_local
+    while d <= today_local:
+        series[d.isoformat()] = _blank(d.isoformat())
+        d += timedelta(days=1)
+    for e in rows:
+        st = _as_utc(e.started_at)
+        if not st:
+            continue
+        day = st.astimezone(tz).date().isoformat()
+        b = series.setdefault(day, _blank(day))
+        b["runs"] += 1
+        if e.status == "success":
+            b["success"] += 1
+        elif e.status in ("failed", "timeout"):
+            b["failed"] += 1
+        b["records_read"] += e.records_read or 0
+        b["records_written"] += e.records_written or 0
+        wa = _as_utc(e.watermark_after)
+        if wa and (b["watermark"] is None or wa.isoformat() > b["watermark"]):
+            b["watermark"] = wa.isoformat()
+        if e.duration_seconds is not None:
+            b["_dsum"] += e.duration_seconds
+            b["_dn"] += 1
+    series_list = []
+    for day in sorted(series):
+        b = series[day]
+        dn = b.pop("_dn", 0)
+        dsum = b.pop("_dsum", 0)
+        b["avg_duration"] = round(dsum / dn, 1) if dn else None
+        series_list.append(b)
+
+    controls = {c.id: c for c in db.scalars(select(IngestionControl)).all()}
+    conns = _conn_names(db)
+    executions = []
+    for e in rows[:limit]:
+        d = _exec_row(e, controls, conns)
+        d["quality"] = (e.quality_summary or {}).get("overall")
+        d["error"] = (e.final_message or "")[:300] if e.status in ("failed", "timeout") else None
+        d["trigger_type"] = e.trigger_type
+        executions.append(d)
+
+    return {
+        "entity": {"type": entity, "id": entity_id, "name": name},
+        "window_days": days,
+        "summary": {
+            "total_runs": total, "success": success, "failed": failed, "running": running,
+            "success_rate": round(100 * success / total, 1) if total else None,
+            "avg_duration_seconds": round(sum(durs) / len(durs), 1) if durs else None,
+            "min_duration_seconds": min(durs) if durs else None,
+            "max_duration_seconds": max(durs) if durs else None,
+            "total_records_read": sum(read_vals) if read_vals else 0,
+            "total_records_written": sum(writ_vals) if writ_vals else 0,
+            "avg_records_written": round(sum(writ_vals) / len(writ_vals)) if writ_vals else None,
+            "last_status": last.status if last else None,
+            "last_execution_at": last.started_at if last else None,
+            "last_execution_id": last.id if last else None,
+        },
+        "series": series_list,
+        "executions": executions,
+    }

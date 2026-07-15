@@ -57,6 +57,7 @@ class ExecutionOut(BaseModel):
     finished_at: datetime | None = None
     duration_seconds: int | None = None
     final_message: str | None = None
+    correlation_id: str | None = None
     parent_execution_id: int | None = None
     step_id: int | None = None
     # Destino declarativo usado nesta execução (DEST-1).

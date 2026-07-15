@@ -99,6 +99,8 @@ class Execution(TimestampMixin, Base):
     watermark_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     watermark_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     quality_summary: Mapped[dict | None] = mapped_column(JSONB)
+    # Rastreabilidade de segurança: id de correlação (não expõe dados).
+    correlation_id: Mapped[str | None] = mapped_column(String(64))
     # parent execution for per-step pipeline runs
     parent_execution_id: Mapped[int | None] = mapped_column(
         ForeignKey("executions.id", ondelete="CASCADE"), index=True

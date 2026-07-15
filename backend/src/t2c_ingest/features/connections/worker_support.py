@@ -333,3 +333,135 @@ def _inject_s3(result: "ResolvedConnections", prefix: str, conn, *, test: bool) 
         result.notes.append(f"  teste {conn.name}: {'OK' if r['success'] else 'FALHOU'} - {r['message']}")
         if not r["success"]:
             result.error = f"Teste S3 falhou para '{conn.name}': {r['message']}"
+
+
+# ─────────────────────── Carga multi-destino (job genérico controlado) ───────────────────────
+
+def _control_selector(job) -> tuple[str, str] | None:
+    """Extrai (kind, value) de --control-id/--control-name/--control-group dos args do job."""
+    args = [str(a) for a in (job.arguments or [])]
+    for kind in ("control-id", "control-name", "control-group"):
+        flag = f"--{kind}"
+        for i, a in enumerate(args):
+            if a == flag and i + 1 < len(args):
+                return kind, args[i + 1]
+            if a.startswith(flag + "="):
+                return kind, a.split("=", 1)[1]
+    return None
+
+
+def _match_controls(db: Session, kind: str, value: str) -> list:
+    from t2c_ingest.features.ingestion_control.models import IngestionControl
+    from sqlalchemy import select
+
+    if kind == "control-id":
+        try:
+            row = db.get(IngestionControl, int(value))
+        except (ValueError, TypeError):
+            return []
+        return [row] if row else []
+    if kind == "control-name":
+        return list(db.scalars(select(IngestionControl).where(IngestionControl.nome_tabela == value)))
+    if kind == "control-group":
+        return list(db.scalars(
+            select(IngestionControl).where(IngestionControl.grupo == value)
+            .order_by(IngestionControl.id)))
+    return []
+
+
+def build_controlled_config(db: Session, job, result: ResolvedConnections) -> dict | None:
+    """Carga multi-destino declarativa: monta um JSON (T2C_CONTROL_CONFIG) descrevendo origem +
+    N destinos de cada controle selecionado, e injeta as CREDENCIAIS por conexão via env
+    (T2C_CONN_{id}_PASSWORD para bancos; AWS_* + s3a --conf para S3). O job genérico lê o JSON e
+    grava em cada destino na ordem. Retorna {control_ids, primary_control_id} ou None (não é uma
+    carga controlada multi-destino)."""
+    import json
+
+    from t2c_ingest.features.ingestion_control import destinations_service as icd
+    from t2c_ingest.features.ingestion_control import resolvers
+    from t2c_ingest.models.connection import Connection
+
+    sel = _control_selector(job)
+    if not sel:
+        return None
+    controls = _match_controls(db, *sel)
+    controls = [c for c in controls if icd.resolve_control_destinations(db, c.id)]
+    if not controls:
+        return None
+
+    injected_conn: set[int] = set()
+
+    def _inject_conn(conn: Connection) -> None:
+        if not conn or conn.id in injected_conn:
+            return
+        injected_conn.add(conn.id)
+        if conn.connection_type == "s3":
+            _inject_s3(result, f"DL{conn.id}_", conn, test=False)  # AWS_* + s3a --conf (global)
+        else:
+            pw = decrypt_secret(conn.password_encrypted) if conn.password_encrypted else ""
+            result.env[f"T2C_CONN_{conn.id}_PASSWORD"] = pw
+            if pw:
+                result.secret_values.append(pw)
+
+    cfg_controls = []
+    for control in controls:
+        src = resolvers.resolve_source(db, control)
+        sconn = db.get(Connection, control.source_connection_id) if control.source_connection_id else None
+        if not sconn:
+            result.notes.append(f"[WARN] controle #{control.id} sem conexão de origem; ignorado.")
+            continue
+        _inject_conn(sconn)
+        dests = []
+        for link in icd.resolve_control_destinations(db, control.id):
+            d = link["destination"]
+            dconn = db.get(Connection, d.connection_id)
+            _inject_conn(dconn)
+            entry = {
+                "role": link["role"], "write_order": link["write_order"],
+                "required": link["required"], "stop_on_failure": link["stop_on_failure"],
+                "destination_id": d.id, "type": d.destination_type, "conn_id": d.connection_id,
+                "write_mode": d.write_mode, "file_format": d.file_format,
+                "compression": d.compression, "partition_columns": d.partition_columns or [],
+                "target_schema": d.target_schema, "target_table": d.target_table or (src.get("table")),
+                "staging_schema": d.staging_schema or d.target_schema,
+                "staging_table": d.staging_table, "primary_key_columns": d.primary_key_columns or [],
+                "target_bucket": d.target_bucket, "target_path": d.target_path,
+                "target_layer": d.target_layer,
+                "conn": _conn_public(dconn),
+            }
+            dests.append(entry)
+        cfg_controls.append({
+            "control_id": control.id, "nome_tabela": control.nome_tabela,
+            "tipo_ingestao": control.tipo_ingestao, "colunas_chave": control.colunas_chave,
+            "source": {**{k: src.get(k) for k in ("source_type", "database", "schema", "table",
+                                                   "incremental_column", "watermark")},
+                       "conn_id": sconn.id, "conn": _conn_public(sconn)},
+            "destinations": dests,
+        })
+
+    if not cfg_controls:
+        return None
+    # URL libpq da base do ingest (mesmo Postgres) p/ o job escrever watermark/status no Controle.
+    from t2c_ingest.core.config import settings as _settings
+    ingest_url = (_settings.database_url or "").replace("postgresql+psycopg://", "postgresql://")
+    if ingest_url:
+        result.env["T2C_INGEST_DB_URL"] = ingest_url
+        import re as _re
+        m = _re.search(r"://[^:]+:([^@]+)@", ingest_url)
+        if m:
+            result.secret_values.append(m.group(1))
+    result.env["T2C_CONTROL_CONFIG"] = json.dumps({"controls": cfg_controls}, default=str)
+    ids = [c["control_id"] for c in cfg_controls]
+    result.notes.append(
+        f"carga multi-destino: {len(ids)} controle(s) [{', '.join(map(str, ids))}], "
+        f"destinos por papel resolvidos do banco (sem args hardcoded).")
+    return {"control_ids": ids, "primary_control_id": ids[0] if len(ids) == 1 else None}
+
+
+def _conn_public(conn) -> dict:
+    """Config NÃO-secreta de uma conexão (a senha vai só via env T2C_CONN_{id}_PASSWORD)."""
+    if not conn:
+        return {}
+    return {"id": conn.id, "name": conn.name, "type": conn.connection_type,
+            "host": conn.host, "port": conn.port, "database": conn.database_name,
+            "user": conn.username, "ssl": bool(conn.ssl_enabled)}

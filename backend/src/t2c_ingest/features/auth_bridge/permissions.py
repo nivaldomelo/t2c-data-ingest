@@ -39,6 +39,8 @@ INGEST_DESTINATIONS_TEST = "ingest:destinations:test"
 INGEST_DATA_LAKE_READ = "ingest:data-lake:read"
 INGEST_DATA_LAKE_SCAN = "ingest:data-lake:scan"
 INGEST_DATA_LAKE_QUERY = "ingest:data-lake:query"
+INGEST_DATA_LAKE_SAMPLE = "ingest:data-lake:sample"
+INGEST_DATA_LAKE_EXPORT = "ingest:data-lake:export"
 INGEST_DATA_LAKE_ADMIN = "ingest:data-lake:admin"
 # Creating a job (admin/editor).
 INGEST_JOBS_CREATE = "ingest:jobs:create"
@@ -101,6 +103,9 @@ INGEST_JOBS_TAGS_WRITE = "ingest:jobs:tags:write"
 INGEST_INTEGRATIONS_READ = "ingest:integrations:read"
 INGEST_INTEGRATIONS_MANAGE = "ingest:integrations:manage"
 INGEST_INTEGRATIONS_RETRY = "ingest:integrations:retry"
+# Segurança (tela/checklist administrativos + rotação de secrets).
+INGEST_SECURITY_READ = "ingest:security:read"
+INGEST_SECURITY_MANAGE = "ingest:security:manage"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -131,6 +136,8 @@ ALL_PERMISSIONS = {
     INGEST_DATA_LAKE_READ,
     INGEST_DATA_LAKE_SCAN,
     INGEST_DATA_LAKE_QUERY,
+    INGEST_DATA_LAKE_SAMPLE,
+    INGEST_DATA_LAKE_EXPORT,
     INGEST_DATA_LAKE_ADMIN,
     INGEST_DESTINATIONS_READ,
     INGEST_DESTINATIONS_CREATE,
@@ -184,6 +191,8 @@ ALL_PERMISSIONS = {
     INGEST_INTEGRATIONS_READ,
     INGEST_INTEGRATIONS_MANAGE,
     INGEST_INTEGRATIONS_RETRY,
+    INGEST_SECURITY_READ,
+    INGEST_SECURITY_MANAGE,
 }
 
 # Mapping from t2c_data role -> ingest permissions.

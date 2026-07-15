@@ -189,12 +189,52 @@ def update_connection(
         setattr(conn, key, value)
     conn.connection_category = category_for_type(conn.connection_type)
     # Empty/omitted secrets keep the current ones; non-empty values replace them.
+    secret_changed = bool(payload.password) or any(getattr(payload, f, None) for f in _AWS_SECRET_FIELDS) \
+        or bool(getattr(payload, "secrets", None))
     if payload.password:
         conn.password_encrypted = encrypt_secret(payload.password)
     _apply_aws_secrets(conn, payload)
     _apply_secrets(conn, payload)
     conn.updated_by = user.email
     record_audit(db, action="ingest.connection.updated", user=user, entity_type="connection", entity_id=conn.id)
+    if secret_changed:
+        # Auditoria de segurança — NUNCA registra o valor do secret.
+        record_audit(db, action="SECRET_UPDATED", user=user, entity_type="connection", entity_id=conn.id,
+                     detail={"connection": conn.name})
+    db.commit()
+    db.refresh(conn)
+    return _to_out(conn)
+
+
+@router.post("/{connection_id}/rotate-secret", response_model=ConnectionOut)
+def rotate_secret(
+    connection_id: int,
+    payload: ConnectionUpdate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_CONNECTIONS_SECRETS_WRITE)),
+) -> ConnectionOut:
+    """Rotaciona a(s) credencial(is) de uma origem/destino: substitui pelos novos valores e audita
+    SECRET_ROTATED — sem nunca gravar o valor antigo nem o novo."""
+    conn = db.get(Connection, connection_id)
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conexão não encontrada")
+    rotated = []
+    if payload.password:
+        conn.password_encrypted = encrypt_secret(payload.password)
+        rotated.append("password")
+    for field in _AWS_SECRET_FIELDS:
+        if getattr(payload, field, None):
+            rotated.append(field)
+    _apply_aws_secrets(conn, payload)
+    if getattr(payload, "secrets", None):
+        _apply_secrets(conn, payload)
+        rotated += [k for k, v in (payload.secrets or {}).items() if v]
+    if not rotated:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Informe ao menos um secret para rotacionar.")
+    conn.updated_by = user.email
+    record_audit(db, action="SECRET_ROTATED", user=user, entity_type="connection", entity_id=conn.id,
+                 detail={"connection": conn.name, "rotated_fields": rotated})  # só nomes, nunca valores
     db.commit()
     db.refresh(conn)
     return _to_out(conn)

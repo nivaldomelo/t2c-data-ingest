@@ -139,7 +139,7 @@ export function ConnectionTable({
             <Eye size={16} />
           </IconAction>
           {perms.test && (
-            <IconAction title="Testar conexão" onClick={() => onTest(c)}>
+            <IconAction title="Testar origem" onClick={() => onTest(c)}>
               {testingId === c.id ? <Loader2 size={16} className="animate-spin text-brand-500" /> : <PlugZap size={16} />}
             </IconAction>
           )}
@@ -168,7 +168,7 @@ export function ConnectionTable({
       empty={
         <EmptyState
           icon={<Plug size={24} />}
-          title="Nenhuma conexão cadastrada"
+          title="Nenhuma origem cadastrada"
           description="Cadastre uma conexão PostgreSQL, MySQL ou AWS S3 / Data Lake para usar em jobs e pipelines."
         />
       }

@@ -1,0 +1,47 @@
+# Defesa em profundidade: nunca copiar segredos/artefatos para o contexto de build das imagens.
+# (Os Dockerfiles usam COPY explícito, mas isto garante que nada sensível vaze por engano.)
+**/.env
+**/.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.pfx
+**/secrets/
+**/*secret*
+**/id_rsa*
+**/*.tfstate
+**/*.tfstate.*
+
+# Git / CI
+.git
+.gitignore
+.github
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Node / frontend
+**/node_modules/
+frontend/dist/
+
+# Dados locais / temporários / backups
+spark/data/
+backups/
+archive/
+runtime-builds/
+*.log
+*.sql
+*.dump
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store

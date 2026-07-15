@@ -37,6 +37,7 @@ from t2c_ingest.models.data_quality import DqResult  # noqa: F401
 from t2c_ingest.models.access import IngestUserAccess  # noqa: F401
 from t2c_ingest.models.outbox import IntegrationOutbox  # noqa: F401
 from t2c_ingest.models.destination import Destination  # noqa: F401
+from t2c_ingest.models.ingestion_control_destination import IngestionControlDestination  # noqa: F401
 from t2c_ingest.models.data_lake import (  # noqa: F401
     DataLakeCatalog,
     DataLakeColumn,

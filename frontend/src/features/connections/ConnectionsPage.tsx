@@ -5,7 +5,7 @@ import { Plug, Plus, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Page } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { PageHeader, PrimaryButton, SecondaryButton } from "@/components/ui";
+import { PageHeader, PrimaryButton, SecondaryButton, HelpBanner } from "@/components/ui";
 import { Modal } from "@/components/ui/Modal";
 import { ConnectionSummaryCards } from "@/features/connections/ConnectionSummaryCards";
 import { ConnectionTable } from "@/features/connections/ConnectionTable";
@@ -156,12 +156,12 @@ export default function ConnectionsPage() {
     <div>
       <PageHeader
         icon={<Plug size={22} />}
-        title="Conexões"
-        description="Gerencie conexões com bancos de dados, Data Lake, storages e APIs usadas por jobs e pipelines."
+        title="Origens"
+        description="Cadastre e teste as origens de dados (bancos, Data Lake, storages e APIs) usadas pelas cargas, jobs e pipelines."
         actions={
           perms.write ? (
             <PrimaryButton icon={<Plus size={16} />} onClick={openCreate}>
-              Nova conexão
+              Nova origem
             </PrimaryButton>
           ) : null
         }
@@ -222,16 +222,24 @@ export default function ConnectionsPage() {
       <Modal
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        title={editing ? "Editar conexão" : pickedType ? `Nova conexão · ${pickedType.label}` : "Nova conexão"}
+        title={editing ? "Editar origem" : pickedType ? `Nova origem · ${pickedType.label}` : "Nova origem"}
         description={
           editing || pickedType
-            ? "Configure e teste a conexão. Segredos não são exibidos e, ao editar, campos em branco mantêm o valor atual."
-            : "Escolha o tipo de conexão."
+            ? "Configure e teste a origem. Segredos não são exibidos e, ao editar, campos em branco mantêm o valor atual."
+            : "Escolha o tipo de origem."
         }
         width="max-w-2xl"
       >
         {!editing && !pickedType ? (
-          <ConnectionTypePicker onPick={setPickedType} />
+          <div className="space-y-4">
+            <HelpBanner title="O que é uma Origem?">
+              Uma <b>origem</b> é uma conexão a uma fonte/destino de dados (banco, Data Lake S3, storage ou API).
+              As <b>credenciais são criptografadas</b> e usadas apenas no servidor/worker — nunca aparecem na tela
+              nem nos logs. Depois de cadastrar, use o botão <b>Testar</b> para validar. Origens são referenciadas
+              por Jobs, Destinos e pelo Controle de Ingestão.
+            </HelpBanner>
+            <ConnectionTypePicker onPick={setPickedType} />
+          </div>
         ) : (() => {
           const effectiveType = editing?.connection_type ?? pickedType?.type ?? "postgres";
           if (NATIVE_FORM_TYPES.has(effectiveType)) {

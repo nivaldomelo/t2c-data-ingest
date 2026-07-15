@@ -10,6 +10,9 @@ from t2c_ingest.core.db import get_db
 from t2c_ingest.core.pagination import PageOut, PageParams
 from t2c_ingest.features.auth_bridge.deps import CurrentUser, require_permission
 from t2c_ingest.features.auth_bridge import permissions as perms
+from pydantic import BaseModel
+
+from t2c_ingest.features.ingestion_control import destinations_service as icd
 from t2c_ingest.features.ingestion_control import resolvers
 from t2c_ingest.features.ingestion_control.models import IngestionControl
 from t2c_ingest.features.ingestion_control.schemas import (
@@ -245,3 +248,82 @@ def deactivate(
     db.commit()
     db.refresh(row)
     return _to_out(db, row)
+
+
+# ─────────────────────────── Destinos da carga (multi-destino) ───────────────────────────
+
+class ControlDestinationIn(BaseModel):
+    destination_id: int
+    destination_role: str = "primary"        # primary | datalake_copy | audit_copy
+    write_order: int = 1
+    required: bool = True
+    stop_on_failure: bool = True
+
+
+class ControlDestinationPatch(BaseModel):
+    destination_role: str | None = None
+    write_order: int | None = None
+    required: bool | None = None
+    stop_on_failure: bool | None = None
+    active: bool | None = None
+
+
+@router.get("/{control_id}/destinations")
+def list_control_destinations(
+    control_id: int,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_permission(perms.INGEST_CONTROL_READ)),
+) -> list[dict]:
+    _get(db, control_id)  # 404 se a carga não existir
+    return icd.list_links(db, control_id)
+
+
+@router.post("/{control_id}/destinations", status_code=status.HTTP_201_CREATED)
+def add_control_destination(
+    control_id: int,
+    payload: ControlDestinationIn,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_CONTROL_WRITE)),
+) -> dict:
+    _get(db, control_id)
+    try:
+        link = icd.add_link(db, control_id, destination_id=payload.destination_id,
+                            destination_role=payload.destination_role, write_order=payload.write_order,
+                            required=payload.required, stop_on_failure=payload.stop_on_failure)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    record_audit(db, action="INGESTION_CONTROL_DESTINATION_LINKED", user=user,
+                 entity_type="ingestion_control", entity_id=control_id,
+                 detail={"destination_id": payload.destination_id, "role": payload.destination_role})
+    link_id = link.id
+    db.commit()
+    return icd.link_to_dict(db.get(type(link), link_id), None) | {"control_id": control_id}
+
+
+@router.patch("/{control_id}/destinations/{link_id}")
+def update_control_destination(
+    control_id: int, link_id: int, payload: ControlDestinationPatch,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_CONTROL_WRITE)),
+) -> dict:
+    try:
+        link = icd.update_link(db, control_id, link_id, **payload.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    if not link:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vínculo não encontrado")
+    db.commit()
+    return {"ok": True, "id": link_id}
+
+
+@router.delete("/{control_id}/destinations/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_control_destination(
+    control_id: int, link_id: int,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_CONTROL_WRITE)),
+) -> None:
+    if not icd.remove_link(db, control_id, link_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vínculo não encontrado")
+    record_audit(db, action="INGESTION_CONTROL_DESTINATION_UNLINKED", user=user,
+                 entity_type="ingestion_control", entity_id=control_id, detail={"link_id": link_id})
+    db.commit()

@@ -158,10 +158,10 @@ class Settings(BaseSettings):
 
     # ── Retention (append-only tables). 0 disables that table's pruning. Days. ──
     retention_execution_logs_days: int = Field(default=90, validation_alias="RETENTION_EXECUTION_LOGS_DAYS")
-    retention_executions_days: int = Field(default=0, validation_alias="RETENTION_EXECUTIONS_DAYS")
+    retention_executions_days: int = Field(default=180, validation_alias="RETENTION_EXECUTIONS_DAYS")
     retention_schedule_runs_days: int = Field(default=90, validation_alias="RETENTION_SCHEDULE_RUNS_DAYS")
     retention_alert_notifications_days: int = Field(default=90, validation_alias="RETENTION_ALERT_NOTIFICATIONS_DAYS")
-    retention_audit_days: int = Field(default=0, validation_alias="RETENTION_AUDIT_DAYS")
+    retention_audit_days: int = Field(default=365, validation_alias="RETENTION_AUDIT_DAYS")
     retention_interval_seconds: int = Field(default=3600, validation_alias="RETENTION_INTERVAL_SECONDS")
 
     # ── Execution reliability ──

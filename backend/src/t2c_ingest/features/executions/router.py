@@ -73,7 +73,7 @@ def list_executions(
 def get_execution(
     execution_id: int,
     db: Session = Depends(get_db),
-    _: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
+    user: CurrentUser = Depends(require_permission(perms.INGEST_READ)),
 ) -> ExecutionDetailOut:
     execution = db.scalar(
         select(Execution)
@@ -100,6 +100,10 @@ def get_execution(
     attributes.set_committed_value(execution, "logs", tail)
     detail = ExecutionDetailOut.model_validate(execution)
     detail.execution_type = execution.target_type
+    # Sanitização de erro (§14): stack trace completo só para admin. Demais perfis veem a mensagem
+    # resumida + correlation_id para suporte, sem o traceback (que pode conter caminhos/detalhes).
+    if detail.error_trace and not user.has(perms.INGEST_ADMIN):
+        detail.error_trace = None
     if execution.schedule_id:
         from t2c_ingest.models.schedule import JobSchedule, ScheduleRun
 
