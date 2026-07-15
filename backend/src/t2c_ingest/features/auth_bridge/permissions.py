@@ -101,6 +101,9 @@ INGEST_JOBS_TAGS_WRITE = "ingest:jobs:tags:write"
 INGEST_INTEGRATIONS_READ = "ingest:integrations:read"
 INGEST_INTEGRATIONS_MANAGE = "ingest:integrations:manage"
 INGEST_INTEGRATIONS_RETRY = "ingest:integrations:retry"
+# Segurança (tela/checklist administrativos + rotação de secrets).
+INGEST_SECURITY_READ = "ingest:security:read"
+INGEST_SECURITY_MANAGE = "ingest:security:manage"
 
 ALL_PERMISSIONS = {
     INGEST_READ,
@@ -184,6 +187,8 @@ ALL_PERMISSIONS = {
     INGEST_INTEGRATIONS_READ,
     INGEST_INTEGRATIONS_MANAGE,
     INGEST_INTEGRATIONS_RETRY,
+    INGEST_SECURITY_READ,
+    INGEST_SECURITY_MANAGE,
 }
 
 # Mapping from t2c_data role -> ingest permissions.

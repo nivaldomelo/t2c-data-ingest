@@ -22,8 +22,8 @@ services:
       PYSPARK_PYTHON: /usr/bin/python3
       PYSPARK_DRIVER_PYTHON: /usr/bin/python3
     ports:
-      - "7078:7077"
-      - "8090:8080"
+      - "127.0.0.1:7078:7077"
+      - "127.0.0.1:8090:8080"
     volumes:
       - ./spark/data:/data
     networks: [t2c]
@@ -40,7 +40,7 @@ services:
       PYSPARK_PYTHON: /usr/bin/python3
       PYSPARK_DRIVER_PYTHON: /usr/bin/python3
     ports:
-      - "8091:8081"
+      - "127.0.0.1:8091:8081"
     volumes:
       - ./spark/data:/data
       - ./spark/jobs:/opt/t2c/spark/jobs
@@ -57,7 +57,7 @@ services:
       PYSPARK_PYTHON: /usr/bin/python3
       PYSPARK_DRIVER_PYTHON: /usr/bin/python3
     ports:
-      - "8092:8081"
+      - "127.0.0.1:8092:8081"
     volumes:
       - ./spark/data:/data
       - ./spark/jobs:/opt/t2c/spark/jobs
@@ -74,7 +74,7 @@ services:
       PYSPARK_PYTHON: /usr/bin/python3
       PYSPARK_DRIVER_PYTHON: /usr/bin/python3
     ports:
-      - "8093:8081"
+      - "127.0.0.1:8093:8081"
     volumes:
       - ./spark/data:/data
       - ./spark/jobs:/opt/t2c/spark/jobs
