@@ -11,8 +11,9 @@ export function TagBadges({ tags, max = 3, className }: { tags: TagLite[]; max?:
       {shown.map((t) => (
         <span
           key={t.id ?? t.slug}
-          className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-gray-600 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"
+          className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-gray-600 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"
         >
+          {t.color && <span className="h-1.5 w-1.5 rounded-full ring-1 ring-inset ring-black/5" style={{ background: t.color }} />}
           {t.name}
         </span>
       ))}
