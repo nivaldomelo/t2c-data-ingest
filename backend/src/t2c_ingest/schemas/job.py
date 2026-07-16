@@ -43,6 +43,11 @@ class JobCreate(JobBase):
     # workspace (in the versioned dir) instead of requiring an explicit script_path.
     tags: list[str] = Field(default_factory=list)
     create_workspace: bool = False
+    # Criação a partir de template: gera o workspace (main.py + README + config + utils) com as
+    # variáveis preenchidas pelo Controle de Ingestão. Quando presente, ignora create_workspace.
+    template_id: str | None = None
+    control_id: int | None = None
+    parameters: dict | None = None
 
 
 class JobUpdate(BaseModel):

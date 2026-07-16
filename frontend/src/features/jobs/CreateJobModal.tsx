@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Code2, Flame, Plus, Trash2, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Code2, Eye, FileCode2, Flame, LayoutTemplate, Plus, Trash2, Zap } from "lucide-react";
 
 import { api, ApiError, type Page } from "@/lib/api";
-import { Modal, PrimaryButton, SecondaryButton, HelpBanner, FieldHint } from "@/components/ui";
+import { CodeViewer, Modal, PrimaryButton, SecondaryButton, HelpBanner, FieldHint } from "@/components/ui";
 import { TagInput } from "@/features/tags/TagInput";
 import { cn } from "@/lib/cn";
 
 type Engine = "spark_cluster" | "python_worker";
+const ADVANCED = "__advanced__";
 
 const TYPES: Record<Engine, { value: string; label: string; desc: string }[]> = {
   spark_cluster: [
@@ -22,6 +23,9 @@ const TYPES: Record<Engine, { value: string; label: string; desc: string }[]> = 
 };
 
 interface ConnectionLite { id: number; name: string; connection_type: string; last_test_status?: string }
+interface JobTemplate { id: string; name: string; engine: string; job_type: string; description: string; requires_control?: boolean }
+interface PreviewFile { path: string; language: string; content: string }
+interface ControlLite { id: number; nome_tabela: string; grupo: string | null }
 
 const inputCls =
   "w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -31,6 +35,7 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [engine, setEngine] = useState<Engine | null>(null);
+  const [templateId, setTemplateId] = useState<string | null>(null); // null = escolher; ADVANCED = form manual
   const [type, setType] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -42,6 +47,7 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   const [sourceConn, setSourceConn] = useState("");
   const [targetConn, setTargetConn] = useState("");
   const [destinationId, setDestinationId] = useState("");
+  const [controlId, setControlId] = useState("");
   const [args, setArgs] = useState<{ key: string; value: string }[]>([]);
   const [defaultParams, setDefaultParams] = useState("");
   const [timeout, setTimeoutS] = useState("");
@@ -49,6 +55,7 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   const [active, setActive] = useState(true);
   const [tags, setTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [previewTab, setPreviewTab] = useState(0);
 
   const { data: connections } = useQuery({
     queryKey: ["connections-lite"],
@@ -65,6 +72,21 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   });
   const dests = destinations?.items ?? [];
 
+  const { data: templatesData } = useQuery({
+    queryKey: ["job-templates"],
+    queryFn: () => api.get<JobTemplate[]>("/api/v1/job-templates"),
+    enabled: open && !!engine,
+  });
+  const templates = (templatesData ?? []).filter((t) => t.engine === engine);
+  const template = templates.find((t) => t.id === templateId) || null;
+
+  const { data: controlsData } = useQuery({
+    queryKey: ["ingestion-controls-lite"],
+    queryFn: () => api.get<Page<ControlLite>>("/api/v1/ingestion-control?page=1&page_size=200"),
+    enabled: open && !!template,
+  });
+  const controls = controlsData?.items ?? [];
+
   const argString = useMemo(
     () => args.filter((a) => a.key.trim()).map((a) => (a.value.trim() ? `--${a.key.trim()} ${a.value.trim()}` : `--${a.key.trim()}`)).join(" "),
     [args]
@@ -76,15 +98,33 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   }, [defaultParams]);
 
   function reset() {
-    setEngine(null); setType(""); setName(""); setDescription(""); setCreateWorkspace(true);
+    setEngine(null); setTemplateId(null); setType(""); setName(""); setDescription(""); setCreateWorkspace(true);
     setScriptPath(""); setMainClass(""); setClusterId(""); setSingleConn(""); setSourceConn("");
-    setTargetConn(""); setDestinationId(""); setArgs([]); setDefaultParams(""); setTimeoutS(""); setRetry("0");
-    setActive(true); setTags([]); setError(null);
+    setTargetConn(""); setDestinationId(""); setControlId(""); setArgs([]); setDefaultParams(""); setTimeoutS(""); setRetry("0");
+    setActive(true); setTags([]); setError(null); preview.reset(); setPreviewTab(0);
   }
   function close() { reset(); onClose(); }
 
+  const preview = useMutation({
+    mutationFn: () => api.post<{ files: PreviewFile[] }>("/api/v1/job-templates/preview", {
+      template_id: template!.id,
+      job: { name: name.trim(), description: description.trim() || null, engine, job_type: template!.job_type },
+      control_id: controlId ? Number(controlId) : null,
+    }),
+    onError: (e) => setError(e instanceof ApiError ? e.message : "Falha ao gerar o preview."),
+  });
+
   const create = useMutation({
     mutationFn: () => {
+      if (template) {
+        return api.post<{ id: number }>("/api/v1/jobs", {
+          name: name.trim(), description: description.trim() || null,
+          engine, type: template.job_type,
+          template_id: template.id,
+          control_id: controlId ? Number(controlId) : null,
+          is_active: active, tags,
+        });
+      }
       const argTokens = args.filter((a) => a.key.trim()).flatMap((a) => (a.value.trim() ? [`--${a.key.trim()}`, a.value.trim()] : [`--${a.key.trim()}`]));
       return api.post<{ id: number }>("/api/v1/jobs", {
         name: name.trim(),
@@ -113,9 +153,13 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
   async function submit(after: "list" | "code" | "run") {
     setError(null);
     if (!name.trim()) return setError("O nome do job é obrigatório.");
-    if (!type) return setError("Selecione o tipo do job.");
-    if (paramsError) return setError(`Parâmetros padrão: ${paramsError}`);
-    if (!createWorkspace && !scriptPath.trim()) return setError("Informe o script path ou marque 'Criar workspace automaticamente'.");
+    if (template) {
+      if (template.requires_control && !controlId) return setError("Selecione o Controle de Ingestão para este template.");
+    } else {
+      if (!type) return setError("Selecione o tipo do job.");
+      if (paramsError) return setError(`Parâmetros padrão: ${paramsError}`);
+      if (!createWorkspace && !scriptPath.trim()) return setError("Informe o script path ou marque 'Criar workspace automaticamente'.");
+    }
     try {
       const job = await create.mutateAsync();
       qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -126,7 +170,8 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
     } catch { /* handled in onError */ }
   }
 
-  const footer = engine && (
+  const showCreateFooter = engine && (templateId === ADVANCED || !!template);
+  const footer = showCreateFooter && (
     <>
       <SecondaryButton onClick={close}>Cancelar</SecondaryButton>
       <SecondaryButton loading={create.isPending} onClick={() => submit("code")}>Criar e abrir código</SecondaryButton>
@@ -134,6 +179,8 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
       <PrimaryButton loading={create.isPending} onClick={() => submit("list")}>Criar job</PrimaryButton>
     </>
   );
+
+  const previewFiles = preview.data?.files ?? [];
 
   return (
     <Modal
@@ -151,9 +198,8 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
         <div>
           <HelpBanner title="O que é um job?">
             Um <b>job</b> é uma unidade de execução de código (Spark ou Python) que lê de uma origem e grava
-            em um destino. Ele fica cadastrado aqui e pode ser executado manualmente, por um <b>schedule</b> ou
-            dentro de um <b>pipeline</b>. Ao criar, você poderá <b>abrir o código</b> (workspace versionado) ou
-            já <b>executar</b>. A API apenas enfileira; quem roda de fato é o worker/cluster Spark.
+            em um destino. Ao criar a partir de um <b>template</b> + <b>Controle de Ingestão</b>, o código inicial
+            já vem pronto (leitura da origem, escrita nos destinos, INGEST_SUMMARY e segurança) — sem começar do zero.
           </HelpBanner>
           <p className="mb-3 mt-4 text-sm font-medium text-gray-700">1. Escolha a engine de execução</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -163,17 +209,110 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
               desc="Scripts Python simples, automações, validações e integrações. Ideal para tarefas leves fora do cluster Spark." />
           </div>
         </div>
-      ) : (
-        <div className="space-y-5">
+      ) : templateId === null ? (
+        /* ── Passo 2: escolher template ── */
+        <div className="space-y-4">
           <button onClick={() => setEngine(null)} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800">
             <ArrowLeft size={14} /> Trocar engine ({engine === "spark_cluster" ? "Spark" : "Python"})
           </button>
+          <p className="text-sm font-medium text-gray-700">2. Escolha um template</p>
+          <div className="grid grid-cols-1 gap-3">
+            {templates.map((t) => (
+              <button key={t.id} onClick={() => { setTemplateId(t.id); setType(t.job_type); }}
+                className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-brand-400 hover:bg-brand-50/40">
+                <LayoutTemplate size={20} className="mt-0.5 shrink-0 text-brand-500" />
+                <span><span className="block text-sm font-semibold text-gray-900">{t.name}</span>
+                  <span className="mt-0.5 block text-xs text-gray-500">{t.description}</span></span>
+              </button>
+            ))}
+            <button onClick={() => setTemplateId(ADVANCED)}
+              className="flex items-start gap-3 rounded-xl border border-dashed border-gray-300 bg-white p-4 text-left transition-colors hover:border-gray-400">
+              <FileCode2 size={20} className="mt-0.5 shrink-0 text-gray-400" />
+              <span><span className="block text-sm font-semibold text-gray-700">Sem template (avançado)</span>
+                <span className="mt-0.5 block text-xs text-gray-500">Configuração manual — script vazio ou caminho existente, argumentos, conexões.</span></span>
+            </button>
+          </div>
+        </div>
+      ) : template ? (
+        /* ── Passo 3/4: parâmetros do template + preview ── */
+        <div className="space-y-5">
+          <button onClick={() => { setTemplateId(null); preview.reset(); }} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800">
+            <ArrowLeft size={14} /> Trocar template ({template.name})
+          </button>
+          <HelpBanner tone="tip">
+            Selecione o <b>Controle de Ingestão</b> — origem, destinos, tabela, partições, incremental e watermark
+            são resolvidos dele e preenchem o código. Veja o <b>preview</b> antes de criar. Credenciais nunca vão
+            para o código: o worker as injeta em runtime.
+          </HelpBanner>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Nome *</label>
+              <input className={`${inputCls} font-mono`} value={name} onChange={(e) => setName(e.target.value)} placeholder="ex.: mysql_to_postgres_s3_clientes" autoFocus />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Descrição</label>
+              <textarea className={inputCls} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Controle de Ingestão {template.requires_control ? "*" : ""}</label>
+              <select className={inputCls} value={controlId} onChange={(e) => { setControlId(e.target.value); preview.reset(); }}>
+                <option value="">— Selecione —</option>
+                {controls.map((c) => <option key={c.id} value={String(c.id)}>{c.nome_tabela}{c.grupo ? ` · ${c.grupo}` : ""}</option>)}
+              </select>
+              <FieldHint>Preenche origem, destino principal, cópia Data Lake, tabela, partições, incremental e watermark no código gerado.</FieldHint>
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Tags</label>
+              <TagInput value={tags} onChange={setTags} allowCreate placeholder="Adicionar tag e Enter…" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+                Job ativo
+              </label>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="border-t border-gray-100 pt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-700">Preview do código</p>
+              <SecondaryButton size="sm" icon={<Eye size={14} />} loading={preview.isPending} onClick={() => { setError(null); setPreviewTab(0); preview.mutate(); }}>
+                {previewFiles.length ? "Atualizar preview" : "Gerar preview"}
+              </SecondaryButton>
+            </div>
+            {previewFiles.length > 0 ? (
+              <div>
+                <div className="flex flex-wrap gap-1 border-b border-gray-100">
+                  {previewFiles.map((f, i) => (
+                    <button key={f.path} onClick={() => setPreviewTab(i)}
+                      className={cn("-mb-px border-b-2 px-3 py-1.5 font-mono text-xs", i === previewTab ? "border-brand-500 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700")}>
+                      {f.path}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 max-h-96 overflow-auto">
+                  <CodeViewer content={previewFiles[previewTab]?.content ?? ""} language={previewFiles[previewTab]?.language ?? "text"} path={previewFiles[previewTab]?.path} readOnly />
+                </div>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-400">
+                Clique em “Gerar preview” para ver main.py, README.md e config.example.json com as variáveis preenchidas.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ── Fluxo AVANÇADO (manual, comportamento original) ── */
+        <div className="space-y-5">
+          <button onClick={() => setTemplateId(null)} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800">
+            <ArrowLeft size={14} /> Voltar aos templates
+          </button>
 
           <HelpBanner tone="tip">
-            Preencha de cima para baixo. Só <b>Nome</b> e <b>Tipo</b> são obrigatórios — o resto pode ser
-            ajustado depois no detalhe do job. Para cargas declarativas (MySQL→PostgreSQL/Data Lake), prefira
-            informar um <b>Destino configurável</b> e/ou o argumento <code>--control-name</code> em vez de fixar
-            origem/destino no código.
+            Configuração manual. Só <b>Nome</b> e <b>Tipo</b> são obrigatórios — o resto pode ser ajustado depois.
+            Para cargas declarativas, prefira criar a partir de um <b>template</b> + <b>Controle de Ingestão</b>.
           </HelpBanner>
 
           {/* tipo */}
@@ -193,7 +332,7 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className={labelCls}>Nome *</label>
-              <input className={`${inputCls} font-mono`} value={name} onChange={(e) => setName(e.target.value)} placeholder="ex.: postgres_to_mysql_massa_teste_clientes" autoFocus />
+              <input className={`${inputCls} font-mono`} value={name} onChange={(e) => setName(e.target.value)} placeholder="ex.: postgres_to_mysql_massa_teste_clientes" />
               <p className="mt-1 text-xs text-gray-400">Recomendado: minúsculas, números e underline.</p>
             </div>
             <div className="sm:col-span-2">
@@ -207,9 +346,8 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
                 Criar workspace automaticamente (gera <code className="mx-1 rounded bg-white px-1 text-xs">main{engine === "spark_cluster" && type === "spark_sql" ? ".sql" : ".py"}</code> versionado)
               </label>
               <FieldHint>
-                Marcado: criamos uma pasta de código versionada e um arquivo inicial que você edita no editor da
-                plataforma. Desmarcado: informe o caminho de um script <b>já existente</b> na imagem (ex.: um job
-                genérico controlado).
+                Marcado: criamos uma pasta de código versionada e um arquivo inicial. Desmarcado: informe o caminho
+                de um script <b>já existente</b> na imagem.
               </FieldHint>
               {!createWorkspace && (
                 <input className={`${inputCls} mt-2 font-mono text-xs`} value={scriptPath} onChange={(e) => setScriptPath(e.target.value)}
@@ -224,28 +362,17 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
               </div>
             )}
 
-            <div className="sm:col-span-2">
-              <FieldHint>
-                <b>Conexões (Origens):</b> credenciais ficam na conexão e são injetadas pelo worker como variáveis
-                de ambiente (<code>SOURCE_*</code>/<code>TARGET_*</code>) — nunca no código nem na linha de comando.
-                Use <b>origem</b> + <b>destino</b> para cargas de A→B; <b>conexão única</b> para jobs que usam só
-                uma base.
-              </FieldHint>
-            </div>
             <div>
               <label className={labelCls}>Conexão origem</label>
               <ConnSelect conns={conns} value={sourceConn} onChange={setSourceConn} />
-              <FieldHint>De onde os dados são lidos (ex.: <code>mysql_massa_teste</code>).</FieldHint>
             </div>
             <div>
               <label className={labelCls}>Conexão destino</label>
               <ConnSelect conns={conns} value={targetConn} onChange={setTargetConn} />
-              <FieldHint>Para onde gravar, quando não usar um Destino configurável abaixo.</FieldHint>
             </div>
             <div>
               <label className={labelCls}>Conexão única</label>
               <ConnSelect conns={conns} value={singleConn} onChange={setSingleConn} />
-              <FieldHint>Para jobs que operam em uma só base (ex.: uma automação/validação).</FieldHint>
             </div>
             <div className="sm:col-span-2">
               <label className={labelCls}>Destino configurável</label>
@@ -255,13 +382,11 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
                   <option key={d.id} value={String(d.id)}>{d.name} · {d.destination_type} · {d.target_display}</option>
                 ))}
               </select>
-              <p className="mt-1 text-xs text-gray-400">Quando informado, o runner resolve o destino e injeta a config (TARGET_*); os argumentos de destino deixam de ser obrigatórios.</p>
             </div>
             {engine === "spark_cluster" && (
               <div>
                 <label className={labelCls}>Cluster ID</label>
                 <input className={inputCls} type="number" min={0} value={clusterId} onChange={(e) => setClusterId(e.target.value)} placeholder="—" />
-                <FieldHint>Opcional. Deixe em branco para usar o cluster Spark padrão.</FieldHint>
               </div>
             )}
 
@@ -269,10 +394,8 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
             <div className="sm:col-span-2">
               <label className={labelCls}>Argumentos (chave/valor)</label>
               <FieldHint>
-                Viram parâmetros de linha de comando do script: a chave <code>source-connection</code> com valor
-                <code> mysql_1</code> vira <code>--source-connection mysql_1</code>. Para a carga controlada, use a
-                chave <code>control-name</code> (valor <code>massa_teste.clientes</code>) ou <code>control-group</code>.
-                Deixe o valor vazio para flags sem valor.
+                Viram parâmetros de linha de comando. Para a carga controlada, use <code>control-name</code>
+                (valor <code>massa_teste.clientes</code>) ou <code>control-group</code>.
               </FieldHint>
               <div className="space-y-2">
                 {args.map((a, i) => (
@@ -293,19 +416,16 @@ export function CreateJobModal({ open, onClose, canRun }: { open: boolean; onClo
             <div className="sm:col-span-2">
               <label className={labelCls}>Parâmetros padrão (JSON)</label>
               <textarea className={`${inputCls} font-mono text-xs`} rows={2} value={defaultParams} onChange={(e) => setDefaultParams(e.target.value)} placeholder='{ "chave": "valor" }' />
-              <FieldHint>Objeto JSON com valores padrão que o job pode ler em runtime (ex.: janela de datas). Opcional.</FieldHint>
               {paramsError && <p className="mt-1 text-xs text-red-500">{paramsError}</p>}
             </div>
 
             <div>
               <label className={labelCls}>Timeout (s)</label>
               <input className={inputCls} type="number" min={0} value={timeout} onChange={(e) => setTimeoutS(e.target.value)} placeholder="Sem limite" />
-              <FieldHint>Tempo máximo por execução; ao exceder, o job é encerrado como <i>timeout</i>.</FieldHint>
             </div>
             <div>
               <label className={labelCls}>Retry</label>
               <input className={inputCls} type="number" min={0} value={retry} onChange={(e) => setRetry(e.target.value)} />
-              <FieldHint>Quantas vezes reexecutar automaticamente se falhar (0 = não repetir).</FieldHint>
             </div>
 
             <div className="sm:col-span-2">

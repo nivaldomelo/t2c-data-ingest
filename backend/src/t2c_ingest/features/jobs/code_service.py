@@ -143,6 +143,38 @@ def provision_job_script(job_type: str | None, name: str, job_id: int) -> str:
     return script_path
 
 
+def provision_job_from_template(
+    job_type: str | None, name: str, job_id: int, files: list[dict], grupo: str | None = None
+) -> str:
+    """Cria o workspace do job a partir de arquivos JÁ renderizados e retorna o caminho do main.
+
+    ``files`` = [{"path": "main.py", "content": "..."}, ...] (paths relativos, podem ter subpasta).
+    Layout ``{base}/{grupo?}/{slug}`` (``{slug}-{id}`` em colisão), dentro dos diretórios permitidos.
+    """
+    base = base_dir_for(job_type)
+    if grupo:
+        base = os.path.join(base, _slugify(grupo))
+    slug = _slugify(name)
+    folder = os.path.join(base, slug)
+    if os.path.exists(folder):
+        folder = os.path.join(base, f"{slug}-{job_id}")
+    os.makedirs(folder, exist_ok=True)
+
+    main_path = None
+    for f in files:
+        rel = f["path"].lstrip("/")
+        dest = os.path.join(folder, *rel.split("/"))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w", encoding="utf-8") as fh:
+            fh.write(f.get("content") or "")
+        if os.path.basename(rel) in ("main.py", "main.sql") and main_path is None:
+            main_path = dest
+    # Garante a validação do caminho dentro dos diretórios permitidos.
+    if not main_path:
+        raise CodeError(400, "Template sem arquivo principal (main.py/main.sql).")
+    return _validate_within_allowed(main_path)
+
+
 def _iso_mtime(real: str) -> str:
     return datetime.fromtimestamp(os.path.getmtime(real), tz=timezone.utc).isoformat()
 

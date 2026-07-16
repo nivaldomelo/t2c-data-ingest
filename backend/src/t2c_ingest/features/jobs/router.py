@@ -18,10 +18,12 @@ from t2c_ingest.features.jobs.code_service import (
     detect_language,
     file_metadata,
     is_editable_extension,
+    provision_job_from_template,
     provision_job_script,
     read_job_code,
     write_job_code,
 )
+from t2c_ingest.features.job_templates import service as template_service
 from t2c_ingest.models.pipeline import PipelineDefinition, PipelineStep
 from t2c_ingest.features.tags.service import job_ids_with_tags, sync_job_tags, tags_for_jobs
 from t2c_ingest.models.connection import Connection
@@ -308,24 +310,50 @@ def create_job(
             detail=f"O tipo '{payload.type}' não é compatível com a engine '{payload.engine}'.",
         )
 
-    data = payload.model_dump(exclude={"tags", "create_workspace"})
+    data = payload.model_dump(exclude={"tags", "create_workspace", "template_id", "control_id", "parameters"})
+    # Fluxo por template: vincula a carga (ingestion_control_id) para o worker rodar controlado.
+    if payload.template_id and payload.control_id and not data.get("ingestion_control_id"):
+        data["ingestion_control_id"] = payload.control_id
     job = JobDefinition(**data, created_by=user.email, updated_by=user.email)
     db.add(job)
     db.flush()
-    # Every job is born versioned. If create_workspace was requested (or no path given), provision
-    # a starter workspace in the versioned dir; an explicit script_path must be inside an allowed dir.
+    # Every job is born versioned. Template flow renders a full workspace with vars filled from the
+    # Ingestion Control; otherwise provision a starter workspace, or validate an explicit path.
     try:
-        if payload.create_workspace or not (job.script_path and job.script_path.strip()):
+        if payload.template_id:
+            tpl = template_service.get_template(payload.template_id)
+            ctx = template_service.build_context(
+                db, tpl,
+                {"name": job.name, "description": job.description, "engine": job.engine, "job_type": job.type},
+                payload.control_id,
+            )
+            files = template_service.render_files(tpl, ctx)
+            grupo = ctx.get("control_group") or None
+            job.script_path = provision_job_from_template(job.type, job.name, job.id, files, grupo=grupo)
+            control_name = ctx.get("control_name")
+            if control_name and not job.arguments:
+                job.arguments = ["--control-name", str(control_name)]
+            record_audit(db, action="JOB_WORKSPACE_GENERATED", user=user, entity_type="job",
+                         entity_id=job.id, detail={"template_id": payload.template_id,
+                                                   "files": [f["path"] for f in files]})
+            for f in files:
+                record_audit(db, action="JOB_TEMPLATE_FILE_RENDERED", user=user, entity_type="job",
+                             entity_id=job.id, detail={"template_id": payload.template_id, "file": f["path"]})
+        elif payload.create_workspace or not (job.script_path and job.script_path.strip()):
             job.script_path = provision_job_script(job.type, job.name, job.id)
         else:
             assert_within_allowed(job.script_path)
+    except template_service.TemplateError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
     except CodeError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
     if payload.tags:
         sync_job_tags(db, job.id, payload.tags, user_id=user.id)
-    record_audit(db, action="JOB_CREATED", user=user, entity_type="job", entity_id=job.id,
-                 detail={"name": job.name, "type": job.type, "engine": job.engine})
+    action = "JOB_CREATED_FROM_TEMPLATE" if payload.template_id else "JOB_CREATED"
+    record_audit(db, action=action, user=user, entity_type="job", entity_id=job.id,
+                 detail={"name": job.name, "type": job.type, "engine": job.engine,
+                         "template_id": payload.template_id, "control_id": payload.control_id})
     db.commit()
     db.refresh(job)
     out = JobOut.model_validate(job)

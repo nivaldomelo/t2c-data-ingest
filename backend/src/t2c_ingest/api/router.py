@@ -23,6 +23,7 @@ from t2c_ingest.features.integration.router import router as integration_router
 from t2c_ingest.features.variables.router import router as variables_router
 from t2c_ingest.features.jobs.router import router as jobs_router
 from t2c_ingest.features.jobs.workspace_router import router as jobs_workspace_router
+from t2c_ingest.features.job_templates.router import router as job_templates_router
 from t2c_ingest.features.runtime.router import router as runtime_router
 from t2c_ingest.features.pipelines.router import router as pipelines_router
 from t2c_ingest.features.pipelines.router import pe_router as pipeline_executions_router
@@ -38,6 +39,7 @@ api_router.include_router(cluster_validations_router)
 api_router.include_router(connections_router)
 api_router.include_router(jobs_router)
 api_router.include_router(jobs_workspace_router)
+api_router.include_router(job_templates_router)
 api_router.include_router(pipelines_router)
 api_router.include_router(pipeline_executions_router)
 api_router.include_router(schedules_router)
