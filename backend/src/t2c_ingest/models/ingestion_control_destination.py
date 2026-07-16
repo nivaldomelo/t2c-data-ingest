@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from t2c_ingest.models.base import Base
@@ -34,5 +35,19 @@ class IngestionControlDestination(Base):
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     stop_on_failure: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+
+    # Overrides por-carga: como ESTA carga usa o destino genérico. Quando nulo, o runner cai de
+    # volta ao valor-base do próprio destino (retrocompat). §10 do pedido.
+    target_schema: Mapped[str | None] = mapped_column(String(150))
+    target_table: Mapped[str | None] = mapped_column(String(255))
+    target_relative_path: Mapped[str | None] = mapped_column(Text)
+    write_mode: Mapped[str | None] = mapped_column(String(50))
+    file_format: Mapped[str | None] = mapped_column(String(50))
+    compression: Mapped[str | None] = mapped_column(String(50))
+    partition_columns: Mapped[list | None] = mapped_column(JSONB)
+    primary_key_columns: Mapped[list | None] = mapped_column(JSONB)
+    staging_table: Mapped[str | None] = mapped_column(String(255))
+    options: Mapped[dict | None] = mapped_column(JSONB)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())

@@ -67,12 +67,24 @@ def s3_path(dest: Destination, table: str | None = None) -> str:
 
 
 def target_display(dest: Destination, table: str | None = None) -> str:
-    # Sem tabela num destino template, mostra o placeholder para deixar o padrão explícito.
-    tbl = table or ("{table}" if dest.is_template else None)
-    eff = effective(dest, tbl)
+    """Alvo BASE do destino genérico (reutilizável), sem tabela específica.
+
+    Ex.: PostgreSQL → "andromeda.massa_teste" (database.schema, ou só schema);
+         S3         → "s3a://datalake-t2c-data-integracao/bronze/".
+    Quando uma tabela é passada explicitamente (ou o destino ainda é específico), reflete-a.
+    """
     if dest.destination_type == "s3":
-        return eff["path"]
+        # Base: raiz bucket/prefixo (a tabela/last-folder vem do Controle de Ingestão).
+        if table or (dest.target_table is None and dest.target_path is None):
+            base = _clean_prefix(dest.target_prefix)
+            return f"s3a://{dest.target_bucket}/{base}/" if base else f"s3a://{dest.target_bucket}/"
+        return effective(dest, table)["path"]
+    # Relacional: mostra database.schema (base). Se ainda houver tabela específica, inclui-a.
     schema = dest.target_schema or ""
+    if not table and dest.target_table is None:
+        db = dest.target_database or ""
+        return f"{db}.{schema}".strip(".") or (schema or "—")
+    eff = effective(dest, table)
     return f"{schema}.{eff['table'] or ''}".strip(".") or (eff["table"] or "—")
 
 

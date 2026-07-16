@@ -86,9 +86,9 @@ export default function DestinationsPage() {
     { key: "name", header: "Nome", render: (d) => (<div><div className="font-medium text-gray-900">{d.name}</div>{d.description && <div className="text-xs text-gray-400">{d.description}</div>}</div>) },
     { key: "type", header: "Tipo", render: (d) => <span className="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{TYPE_LABEL[d.destination_type]}</span> },
     { key: "conn", header: "Conexão", render: (d) => <span className="text-gray-600">{d.connection_name ?? "—"}</span> },
-    { key: "target", header: "Alvo", render: (d) => <span className="font-mono text-xs text-gray-600">{d.target_display ?? "—"}</span> },
-    { key: "write", header: "Write mode", render: (d) => <span className="text-gray-600">{d.write_mode}</span> },
-    { key: "fmt", header: "Formato", render: (d) => <span className="text-gray-500">{d.destination_type === "s3" ? d.file_format ?? "—" : "—"}</span> },
+    { key: "target", header: "Alvo base", render: (d) => <span className="font-mono text-xs text-gray-600">{d.target_display ?? "—"}</span> },
+    { key: "write", header: "Write mode padrão", render: (d) => <span className="text-gray-600">{d.write_mode}</span> },
+    { key: "fmt", header: "Formato padrão", render: (d) => <span className="text-gray-500">{d.destination_type === "s3" ? d.file_format ?? "—" : "—"}</span> },
     { key: "test", header: "Último teste", render: (d) => <ConnectionStatusBadge status={d.last_test_status} /> },
     { key: "active", header: "Ativo", render: (d) => <StatusBadge status={d.active ? "active" : "inactive"} /> },
     {
@@ -203,7 +203,6 @@ function IconBtn({ title, onClick, children, danger }: { title: string; onClick:
 function DestinationDetail({ dest, canTest }: { dest: Destination; canTest: boolean }) {
   const [tab, setTab] = useState<"resumo" | "config" | "como-usar" | "teste">("resumo");
   const test = useMutation({ mutationFn: () => api.post<DestinationTestResult>(`/api/v1/destinations/${dest.id}/test`, {}) });
-  const parts = (dest.partition_columns ?? []).join(", ") || "—";
   const TABS = [
     { id: "resumo" as const, label: "Resumo" },
     { id: "config" as const, label: "Configuração" },
@@ -223,19 +222,20 @@ function DestinationDetail({ dest, canTest }: { dest: Destination; canTest: bool
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <D label="Tipo" v={TYPE_LABEL[dest.destination_type]} />
             <D label="Conexão" v={dest.connection_name ?? "—"} />
-            <D label="Alvo" v={<span className="font-mono text-xs">{dest.target_display}</span>} />
-            <D label="Write mode" v={dest.write_mode} />
+            <D label="Alvo base" v={<span className="font-mono text-xs">{dest.target_display}</span>} />
+            <D label="Write mode padrão" v={dest.write_mode} />
             {dest.destination_type === "s3" ? (
               <>
-                <D label="Formato" v={dest.file_format ?? "—"} />
+                <D label="Formato padrão" v={dest.file_format ?? "—"} />
                 <D label="Camada" v={dest.target_layer ?? "—"} />
-                <D label="Compressão" v={dest.compression ?? "—"} />
-                <D label="Partições" v={parts} />
+                <D label="Compressão padrão" v={dest.compression ?? "—"} />
+                <D label="Prefixo base" v={dest.target_prefix ?? "—"} />
               </>
             ) : (
               <>
-                <D label="Chaves" v={(dest.primary_key_columns ?? []).join(", ") || "—"} />
-                <D label="Staging" v={dest.staging_table ? `${dest.staging_schema ?? dest.target_schema}.${dest.staging_table}` : "—"} />
+                <D label="Database" v={dest.target_database ?? "—"} />
+                <D label="Schema padrão" v={dest.target_schema ?? "—"} />
+                <D label="Staging schema padrão" v={dest.staging_schema ?? dest.target_schema ?? "—"} />
               </>
             )}
             <D label="Último teste" v={<ConnectionStatusBadge status={dest.last_test_status} />} />
@@ -272,79 +272,48 @@ function D({ label, v }: { label: string; v: React.ReactNode }) {
   return <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</dt><dd className="mt-0.5 text-gray-800">{v}</dd></div>;
 }
 
-function sub(val: string | null | undefined, table: string): string {
-  return (val ?? "").replace(/\{table\}|\{nome_tabela\}/g, table);
-}
-
 function ComoUsarTab({ dest }: { dest: Destination }) {
   const isS3 = dest.destination_type === "s3";
-  const example = "clientes"; // tabela de exemplo p/ ilustrar um destino template
-  const tbl = dest.is_template ? example : (isS3 ? "" : dest.target_table ?? "");
+  const example = "clientes"; // tabela de exemplo p/ ilustrar como o Controle usa este destino
 
-  // Prévia do que o runner injeta (TARGET_*), mesma lógica do resolver.
-  const env: string[] = [`TARGET_TYPE=${dest.destination_type}`, `TARGET_CONNECTION_NAME=${dest.connection_name ?? ""}`];
-  if (isS3) {
-    const base = (dest.target_prefix ?? "").replace(/^\/+|\/+$/g, "");
-    const prefix = base.includes("{table}") ? sub(base, tbl) : (dest.is_template && tbl ? `${base ? base + "/" : ""}${tbl}` : base);
-    const path = `s3a://${dest.target_bucket}/${prefix ? prefix + "/" : ""}`;
-    env.push(
-      `TARGET_BUCKET=${dest.target_bucket ?? ""}`,
-      `TARGET_PREFIX=${prefix}`,
-      `TARGET_PATH=${path}`,
-      `TARGET_LAYER=${dest.target_layer ?? ""}`,
-      `FILE_FORMAT=${dest.file_format ?? "parquet"}`,
-      `WRITE_MODE=${dest.write_mode}`,
-      ...(dest.compression ? [`COMPRESSION=${dest.compression}`] : []),
-      ...((dest.partition_columns ?? []).length ? [`PARTITION_COLUMNS=${(dest.partition_columns ?? []).join(",")}`] : []),
-    );
-  } else {
-    const table = dest.target_table ? sub(dest.target_table, tbl) : tbl;
-    const staging = dest.staging_table ? sub(dest.staging_table, tbl) : (dest.is_template && dest.write_mode === "upsert" ? `stg_${tbl}` : "");
-    env.push(
-      `TARGET_SCHEMA=${dest.target_schema ?? ""}`,
-      `TARGET_TABLE=${table}`,
-      `WRITE_MODE=${dest.write_mode}`,
-      ...((dest.primary_key_columns ?? []).length ? [`PRIMARY_KEY_COLUMNS=${(dest.primary_key_columns ?? []).join(",")}`] : []),
-      ...(staging ? [`STAGING_TABLE=${staging}`] : []),
-      ...(dest.upsert_strategy ? [`UPSERT_STRATEGY=${dest.upsert_strategy}`] : []),
-      "TARGET_HOST=…  TARGET_DB=…  TARGET_USER=…  TARGET_PASSWORD=***  (injetados da conexão)",
-    );
-  }
+  // Alvo BASE reutilizável (o detalhe por-carga vem do Controle de Ingestão).
+  const base = isS3
+    ? `s3a://${dest.target_bucket}/${(dest.target_prefix ?? "").replace(/^\/+|\/+$/g, "")}/`.replace(/\/+$/, "/")
+    : `${dest.target_database ? dest.target_database + "." : ""}${dest.target_schema ?? ""}`;
 
-  const refJob = dest.is_template
-    ? `# No Job: selecione este destino (destination_id=${dest.id}).\n# A tabela vem do Controle de Ingestão (nome_tabela) ou de um argumento:\n--table ${example}`
-    : `# No Job: selecione este destino (destination_id=${dest.id}). Alvo fixo — nada a informar.`;
+  const resultado = isS3
+    ? `${base}${example}/ano=2026/mes=07/dia=16/`
+    : `${dest.target_schema ?? "schema"}.${example}`;
 
-  const refControl = `-- Controle de Ingestão: aponte a linha da tabela para este destino\nnome_tabela = ${dest.is_template ? example : (dest.target_table ?? "…")}\ndestination_id = ${dest.id}`;
-
-  const py = isS3
-    ? `import os\nfrom pyspark.sql import functions as F\n\npath = os.environ["TARGET_PATH"]        # ${isS3 ? `s3a://${dest.target_bucket}/${dest.is_template ? "…/<tabela>" : ""}` : ""}\nmode = os.environ.get("WRITE_MODE", "append")\nparts = [c for c in os.environ.get("PARTITION_COLUMNS","").split(",") if c]\n\n(df.write.mode(mode).format(os.environ.get("FILE_FORMAT","parquet"))\n   .option("compression", os.environ.get("COMPRESSION","snappy"))\n   ${"" }.partitionBy(*parts).save(path))`
-    : `import os\n\nschema = os.environ["TARGET_SCHEMA"]\ntable  = os.environ["TARGET_TABLE"]       # resolvido do destino/tabela em runtime\nmode   = os.environ.get("WRITE_MODE","append")\nkeys   = os.environ.get("PRIMARY_KEY_COLUMNS","").split(",")\nstaging= os.environ.get("STAGING_TABLE")   # ex.: stg_${dest.is_template ? example : (dest.target_table ?? "tabela")}\n# grave via JDBC usando TARGET_HOST/TARGET_DB/TARGET_USER/TARGET_PASSWORD (injetados da conexão)`;
+  const refControl = isS3
+    ? `-- Controle de Ingestão (vínculo Data Lake) — a carga define o path relativo e as partições\n`
+      + `destination        = ${dest.name}   (role: datalake_copy)\n`
+      + `target_relative_path = ${example}\n`
+      + `partition_columns    = ano, mes, dia`
+    : `-- Controle de Ingestão (vínculo principal) — a carga define a tabela e as chaves\n`
+      + `destination        = ${dest.name}   (role: primary)\n`
+      + `target_table       = ${example}\n`
+      + `primary_key_columns = ${example}_uuid\n`
+      + `write_mode         = upsert`;
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        {dest.is_template
-          ? "Destino template: reutilizável por várias tabelas. O nome da tabela vem em runtime (Controle de Ingestão ou --table); o runner injeta a config final por execução."
-          : "Destino específico: aponta para um alvo fixo. Selecione-o no Job ou no Controle de Ingestão."}
+        Este destino é um <b>alvo base reutilizável</b>. A tabela, o path relativo, as partições e as chaves de
+        cada carga <b>não</b> ficam aqui — ficam no <b>Controle de Ingestão</b> (no vínculo carga↔destino). Um
+        mesmo destino atende N tabelas.
       </p>
       <div>
-        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Referenciar no Job</p>
-        <CodeViewer content={refJob} language="shell" />
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Alvo base</p>
+        <CodeViewer content={base || "—"} language="shell" />
       </div>
       <div>
-        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Referenciar no Controle de Ingestão</p>
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Como uma carga usa este destino (Controle de Ingestão)</p>
         <CodeViewer content={refControl} language="sql" />
       </div>
       <div>
-        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
-          Variáveis injetadas pelo runner {dest.is_template ? `(exemplo: tabela “${example}”)` : ""}
-        </p>
-        <CodeViewer content={env.join("\n")} language="shell" />
-      </div>
-      <div>
-        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Exemplo no job ({isS3 ? "Spark" : "Python/JDBC"})</p>
-        <CodeViewer content={py} language="python" />
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Resultado montado pelo runner (exemplo: tabela “{example}”)</p>
+        <CodeViewer content={resultado} language="shell" />
       </div>
     </div>
   );

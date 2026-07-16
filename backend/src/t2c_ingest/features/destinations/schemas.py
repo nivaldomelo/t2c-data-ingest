@@ -24,6 +24,8 @@ class DestinationBase(BaseModel):
     file_format: str | None = None
     write_mode: str = "append"
     compression: str | None = None
+    encryption_mode: str | None = None   # SSE-S3 | SSE-KMS
+    kms_key_id: str | None = None        # não secreto
     partition_columns: list[str] | None = None
     primary_key_columns: list[str] | None = None
     staging_schema: str | None = None
@@ -60,6 +62,8 @@ class DestinationUpdate(BaseModel):
     file_format: str | None = None
     write_mode: str | None = None
     compression: str | None = None
+    encryption_mode: str | None = None
+    kms_key_id: str | None = None
     partition_columns: list[str] | None = None
     primary_key_columns: list[str] | None = None
     staging_schema: str | None = None

@@ -258,6 +258,17 @@ class ControlDestinationIn(BaseModel):
     write_order: int = 1
     required: bool = True
     stop_on_failure: bool = True
+    # Overrides por-carga (§10): como ESTA carga usa o destino genérico. Nulos → base do destino.
+    target_schema: str | None = None
+    target_table: str | None = None
+    target_relative_path: str | None = None
+    write_mode: str | None = None
+    file_format: str | None = None
+    compression: str | None = None
+    partition_columns: list[str] | None = None
+    primary_key_columns: list[str] | None = None
+    staging_table: str | None = None
+    options: dict | None = None
 
 
 class ControlDestinationPatch(BaseModel):
@@ -266,6 +277,16 @@ class ControlDestinationPatch(BaseModel):
     required: bool | None = None
     stop_on_failure: bool | None = None
     active: bool | None = None
+    target_schema: str | None = None
+    target_table: str | None = None
+    target_relative_path: str | None = None
+    write_mode: str | None = None
+    file_format: str | None = None
+    compression: str | None = None
+    partition_columns: list[str] | None = None
+    primary_key_columns: list[str] | None = None
+    staging_table: str | None = None
+    options: dict | None = None
 
 
 @router.get("/{control_id}/destinations")
@@ -289,7 +310,9 @@ def add_control_destination(
     try:
         link = icd.add_link(db, control_id, destination_id=payload.destination_id,
                             destination_role=payload.destination_role, write_order=payload.write_order,
-                            required=payload.required, stop_on_failure=payload.stop_on_failure)
+                            required=payload.required, stop_on_failure=payload.stop_on_failure,
+                            **payload.model_dump(exclude={"destination_id", "destination_role",
+                                                          "write_order", "required", "stop_on_failure"}))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     record_audit(db, action="INGESTION_CONTROL_DESTINATION_LINKED", user=user,

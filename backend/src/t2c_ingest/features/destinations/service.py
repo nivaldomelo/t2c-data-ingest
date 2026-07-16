@@ -18,27 +18,22 @@ def get_connection(db: Session, connection_id: int) -> Connection | None:
 
 
 def validate(data: dict, conn: Connection | None) -> None:
-    """Valida a configuração declarativa do destino. Levanta ValueError com mensagem amigável."""
+    """Valida a configuração do destino GENÉRICO (alvo técnico reutilizável). Levanta ValueError.
+
+    O destino representa banco/schema (PostgreSQL) ou bucket/prefixo/camada (S3), NÃO uma tabela.
+    Tabela/path relativo/partição/chave/staging específicos ficam no Controle de Ingestão (vínculo
+    carga↔destino). Por isso aqui só validamos os campos-base reutilizáveis.
+    """
     dtype = data.get("destination_type")
-    is_template = bool(data.get("is_template"))
     if conn is None:
         raise ValueError("Conexão do destino não encontrada.")
     if dtype == "postgres":
         if conn.connection_type != "postgres":
             raise ValueError("A conexão precisa ser do tipo PostgreSQL.")
         if not data.get("target_schema"):
-            raise ValueError("Schema destino é obrigatório.")
-        # Template: a tabela vem em runtime (Controle/arg); específico exige a tabela.
-        if not is_template and not data.get("target_table"):
-            raise ValueError("Tabela destino é obrigatória (ou marque como destino template).")
+            raise ValueError("Schema padrão é obrigatório.")
         if not data.get("write_mode"):
-            raise ValueError("Modo de escrita é obrigatório.")
-        if data.get("write_mode") == "upsert":
-            if not data.get("primary_key_columns"):
-                raise ValueError("Para upsert, informe as colunas chave.")
-            # Template deriva a staging (stg_{table}) quando não informada.
-            if not is_template and not data.get("staging_table"):
-                raise ValueError("Para upsert, informe a tabela de staging.")
+            raise ValueError("Modo de escrita padrão é obrigatório.")
     elif dtype == "s3":
         if conn.connection_type != "s3":
             raise ValueError("A conexão precisa ser do tipo S3 / Data Lake.")
@@ -46,13 +41,10 @@ def validate(data: dict, conn: Connection | None) -> None:
             raise ValueError("Bucket é obrigatório.")
         if not data.get("target_layer"):
             raise ValueError("Camada é obrigatória.")
-        # Template: prefixo/path é a RAIZ (a tabela é anexada em runtime) — pode ser vazio.
-        if not is_template and not (data.get("target_prefix") or data.get("target_path")):
-            raise ValueError("Prefixo ou path é obrigatório (ou marque como destino template).")
         if not data.get("file_format"):
-            raise ValueError("Formato é obrigatório.")
+            raise ValueError("Formato padrão é obrigatório.")
         if not data.get("write_mode"):
-            raise ValueError("Modo de escrita é obrigatório.")
+            raise ValueError("Modo de escrita padrão é obrigatório.")
 
 
 def _now() -> datetime:
@@ -99,18 +91,21 @@ def _test_postgres_dest(dest: Destination, conn: Connection) -> dict:
                 cur.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name = %s", (dest.target_schema,))
                 schema_ok = cur.fetchone() is not None
                 checks.append(_check("Schema existe", schema_ok, dest.target_schema or ""))
-                cur.execute(
-                    "SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
-                    (dest.target_schema, dest.target_table),
-                )
-                table_ok = cur.fetchone() is not None
-                checks.append(_check("Tabela existe", table_ok, f"{dest.target_schema}.{dest.target_table}"
-                                     if table_ok else "será criada na carga, se o job permitir"))
-                if table_ok:
-                    cur.execute("SELECT has_table_privilege(%s, 'INSERT')",
-                                (f"{dest.target_schema}.{dest.target_table}",))
-                    write_ok = bool(cur.fetchone()[0])
-                    checks.append(_check("Permissão de escrita (INSERT)", write_ok))
+                # Destino genérico não fixa tabela (vem do Controle); só validamos tabela/staging
+                # quando o destino ainda carrega uma tabela específica (retrocompat).
+                if dest.target_table:
+                    cur.execute(
+                        "SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+                        (dest.target_schema, dest.target_table),
+                    )
+                    table_ok = cur.fetchone() is not None
+                    checks.append(_check("Tabela existe", table_ok, f"{dest.target_schema}.{dest.target_table}"
+                                         if table_ok else "será criada na carga, se o job permitir"))
+                    if table_ok:
+                        cur.execute("SELECT has_table_privilege(%s, 'INSERT')",
+                                    (f"{dest.target_schema}.{dest.target_table}",))
+                        write_ok = bool(cur.fetchone()[0])
+                        checks.append(_check("Permissão de escrita (INSERT)", write_ok))
                 if dest.write_mode == "upsert" and dest.staging_table:
                     st_schema = dest.staging_schema or dest.target_schema
                     cur.execute(

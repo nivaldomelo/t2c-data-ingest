@@ -68,27 +68,25 @@ export const FILE_FORMATS = ["parquet", "csv", "json", "orc"];
 export const COMPRESSIONS = ["snappy", "gzip", "none"];
 export const UPSERT_STRATEGIES = ["on_conflict", "merge"];
 
+// Destino GENÉRICO (alvo técnico reutilizável). Tabela/path relativo/partição/chave/staging
+// específicos ficam no Controle de Ingestão (vínculo carga↔destino), não aqui.
 export interface DestinationSubmit {
   name: string;
   description: string | null;
   destination_type: DestinationType;
   connection_id: number;
-  write_mode: string;
-  is_template?: boolean;
+  write_mode: string; // write mode padrão
   active: boolean;
-  target_schema?: string | null;
-  target_table?: string | null;
-  primary_key_columns?: string[] | null;
-  staging_schema?: string | null;
-  staging_table?: string | null;
-  upsert_strategy?: string | null;
-  truncate_before_load?: boolean;
+  // PostgreSQL (base)
+  target_database?: string | null; // opcional
+  target_schema?: string | null;   // schema padrão
+  staging_schema?: string | null;  // staging schema padrão
+  // S3 / Data Lake (base)
   target_bucket?: string | null;
   target_layer?: string | null;
-  target_prefix?: string | null;
-  file_format?: string | null;
-  compression?: string | null;
+  target_prefix?: string | null;   // prefixo base
+  file_format?: string | null;     // formato padrão
+  compression?: string | null;     // compressão padrão
   encryption_mode?: string | null;
   kms_key_id?: string | null;
-  partition_columns?: string[] | null;
 }

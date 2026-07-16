@@ -416,20 +416,7 @@ def build_controlled_config(db: Session, job, result: ResolvedConnections) -> di
             d = link["destination"]
             dconn = db.get(Connection, d.connection_id)
             _inject_conn(dconn)
-            entry = {
-                "role": link["role"], "write_order": link["write_order"],
-                "required": link["required"], "stop_on_failure": link["stop_on_failure"],
-                "destination_id": d.id, "type": d.destination_type, "conn_id": d.connection_id,
-                "write_mode": d.write_mode, "file_format": d.file_format,
-                "compression": d.compression, "partition_columns": d.partition_columns or [],
-                "target_schema": d.target_schema, "target_table": d.target_table or (src.get("table")),
-                "staging_schema": d.staging_schema or d.target_schema,
-                "staging_table": d.staging_table, "primary_key_columns": d.primary_key_columns or [],
-                "target_bucket": d.target_bucket, "target_path": d.target_path,
-                "target_layer": d.target_layer,
-                "conn": _conn_public(dconn),
-            }
-            dests.append(entry)
+            dests.append(_build_dest_entry(link, d, control, src, _conn_public(dconn)))
         cfg_controls.append({
             "control_id": control.id, "nome_tabela": control.nome_tabela,
             "tipo_ingestao": control.tipo_ingestao, "colunas_chave": control.colunas_chave,
@@ -456,6 +443,70 @@ def build_controlled_config(db: Session, job, result: ResolvedConnections) -> di
         f"carga multi-destino: {len(ids)} controle(s) [{', '.join(map(str, ids))}], "
         f"destinos por papel resolvidos do banco (sem args hardcoded).")
     return {"control_ids": ids, "primary_control_id": ids[0] if len(ids) == 1 else None}
+
+
+def _control_table_name(control, src: dict) -> str | None:
+    """Nome da tabela derivado do controle: source table, senão o último trecho de nome_tabela."""
+    tbl = src.get("table")
+    if tbl:
+        return tbl
+    nome = (control.nome_tabela or "").strip()
+    return nome.split(".")[-1] if nome else None
+
+
+def _keys_from_control(control) -> list[str]:
+    raw = getattr(control, "colunas_chave", None) or ""
+    return [c.strip() for c in str(raw).split(",") if c.strip()]
+
+
+def _s3_join(bucket: str | None, base_prefix: str | None, relative: str | None) -> str | None:
+    """Monta s3a://{bucket}/{base_prefix}/{relative}/ (base do destino + path relativo da carga)."""
+    if not bucket:
+        return None
+    parts = [(base_prefix or "").strip().strip("/"), (relative or "").strip().strip("/")]
+    tail = "/".join(p for p in parts if p)
+    return f"s3a://{bucket}/{tail}/" if tail else f"s3a://{bucket}/"
+
+
+def _build_dest_entry(link: dict, d, control, src: dict, conn_public: dict) -> dict:
+    """Monta a entrada de um destino para o runner, resolvendo cada atributo por precedência:
+    override do vínculo → campo do controle → base do destino → fallback (tabela da origem).
+    Retrocompatível: se não houver override e o destino ainda for por-tabela, cai nos campos do destino.
+    """
+    ov = link.get("overrides") or {}
+    tbl = ov.get("target_table") or d.target_table or _control_table_name(control, src)
+    entry = {
+        "role": link["role"], "write_order": link["write_order"],
+        "required": link["required"], "stop_on_failure": link["stop_on_failure"],
+        "destination_id": d.id, "type": d.destination_type, "conn_id": d.connection_id,
+        "write_mode": ov.get("write_mode") or d.write_mode,
+        "target_layer": d.target_layer,
+        "conn": conn_public,
+    }
+    if d.destination_type == "s3":
+        rel = ov.get("target_relative_path") or ov.get("target_table") or tbl
+        # Se o destino ainda carrega um target_path fixo (legado por-tabela) e não há override, usa-o.
+        legacy_path = d.target_path if (d.target_path and not ov.get("target_relative_path")) else None
+        entry.update({
+            "file_format": ov.get("file_format") or d.file_format,
+            "compression": ov.get("compression") or d.compression,
+            "partition_columns": ov.get("partition_columns") or d.partition_columns or [],
+            "target_bucket": d.target_bucket,
+            "target_path": legacy_path or _s3_join(d.target_bucket, d.target_prefix, rel),
+        })
+    else:
+        schema = ov.get("target_schema") or d.target_schema
+        entry.update({
+            "target_schema": schema,
+            "target_table": tbl,
+            "staging_schema": d.staging_schema or schema,
+            "staging_table": ov.get("staging_table") or d.staging_table or (f"stg_{tbl}_ingest" if tbl else None),
+            "primary_key_columns": ov.get("primary_key_columns") or d.primary_key_columns or _keys_from_control(control),
+            "file_format": ov.get("file_format") or d.file_format,
+            "compression": ov.get("compression") or d.compression,
+            "partition_columns": ov.get("partition_columns") or d.partition_columns or [],
+        })
+    return entry
 
 
 def _conn_public(conn) -> dict:

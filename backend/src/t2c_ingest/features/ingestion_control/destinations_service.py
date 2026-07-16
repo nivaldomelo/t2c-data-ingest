@@ -17,6 +17,17 @@ from t2c_ingest.models.ingestion_control_destination import (
 )
 
 
+# Overrides por-carga persistidos no vínculo (quando nulos, o runner usa a base do destino).
+_OVERRIDE_FIELDS = (
+    "target_schema", "target_table", "target_relative_path", "write_mode", "file_format",
+    "compression", "partition_columns", "primary_key_columns", "staging_table", "options",
+)
+
+
+def _overrides(link: IngestionControlDestination) -> dict:
+    return {k: getattr(link, k) for k in _OVERRIDE_FIELDS}
+
+
 def _dest_brief(d: Destination | None) -> dict | None:
     if not d:
         return None
@@ -24,8 +35,9 @@ def _dest_brief(d: Destination | None) -> dict | None:
         "id": d.id, "name": d.name, "destination_type": d.destination_type,
         "connection_id": d.connection_id, "target_layer": d.target_layer,
         "target_schema": d.target_schema, "target_table": d.target_table,
-        "target_bucket": d.target_bucket, "target_path": d.target_path,
-        "file_format": d.file_format, "write_mode": d.write_mode,
+        "target_database": d.target_database, "staging_schema": d.staging_schema,
+        "target_bucket": d.target_bucket, "target_prefix": d.target_prefix, "target_path": d.target_path,
+        "file_format": d.file_format, "compression": d.compression, "write_mode": d.write_mode,
         "partition_columns": d.partition_columns, "is_template": d.is_template,
     }
 
@@ -35,6 +47,7 @@ def link_to_dict(link: IngestionControlDestination, dest: Destination | None) ->
         "id": link.id, "control_id": link.control_id, "destination_id": link.destination_id,
         "destination_role": link.destination_role, "write_order": link.write_order,
         "required": link.required, "stop_on_failure": link.stop_on_failure, "active": link.active,
+        **_overrides(link),
         "destination": _dest_brief(dest),
     }
 
@@ -53,7 +66,8 @@ def list_links(db: Session, control_id: int) -> list[dict]:
 
 
 def add_link(db: Session, control_id: int, *, destination_id: int, destination_role: str,
-             write_order: int = 1, required: bool = True, stop_on_failure: bool = True) -> IngestionControlDestination:
+             write_order: int = 1, required: bool = True, stop_on_failure: bool = True,
+             **overrides) -> IngestionControlDestination:
     if destination_role not in DESTINATION_ROLES:
         raise ValueError(f"Papel inválido: {destination_role}. Use um de {DESTINATION_ROLES}.")
     if not db.get(Destination, destination_id):
@@ -68,6 +82,7 @@ def add_link(db: Session, control_id: int, *, destination_id: int, destination_r
     link = IngestionControlDestination(
         control_id=control_id, destination_id=destination_id, destination_role=destination_role,
         write_order=write_order, required=required, stop_on_failure=stop_on_failure, active=True,
+        **{k: overrides[k] for k in _OVERRIDE_FIELDS if overrides.get(k) is not None},
     )
     db.add(link)
     db.flush()
@@ -92,6 +107,10 @@ def update_link(db: Session, control_id: int, link_id: int, **fields) -> Ingesti
             if k == "destination_role" and fields[k] not in DESTINATION_ROLES:
                 raise ValueError(f"Papel inválido: {fields[k]}.")
             setattr(link, k, fields[k])
+    # Overrides: aceitam limpar (setar None explicitamente) via presença da chave.
+    for k in _OVERRIDE_FIELDS:
+        if k in fields:
+            setattr(link, k, fields[k])
     link.updated_at = datetime.now(timezone.utc)
     db.flush()
     return link
@@ -112,5 +131,5 @@ def resolve_control_destinations(db: Session, control_id: int) -> list[dict]:
         if dest:
             out.append({"role": l.destination_role, "write_order": l.write_order,
                         "required": l.required, "stop_on_failure": l.stop_on_failure,
-                        "destination": dest})
+                        "overrides": _overrides(l), "destination": dest})
     return out
